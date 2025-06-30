@@ -1,0 +1,135 @@
+{
+  "name": "incontext",
+  "displayName": "Code Reference Extension",
+  "description": "A VS Code extension that provides easy code reference capabilities for your workspace. This extension allows you to create and navigate code references seamlessly, making it easier to reference specific code snippets and files in documentation, comments, AI prompts, or anywhere else in your project. When working with AI tools, these precise code references help you get more accurate responses by providing exact context about the code you're discussing.",
+  "publisher": "managea",
+  "version": "0.0.1",
+  "icon": "icon.png",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/managea/incontext.git"
+  },
+  "bugs": {
+    "url": "https://github.com/managea/incontext.git"
+  },
+  "homepage": "https://github.com/managea/incontext.git#readme",
+  "author": {
+    "name": "Asanga Manage",
+    "email": "asanga.lk@gmail.com"
+  },
+  "engines": {
+    "vscode": "^1.96.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "extensionDependencies": [],
+  "extensionKind": ["workspace"],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": true
+    }
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "incontext.copyCodeReference",
+        "title": "Copy Code Reference to Clipboard"
+      },
+      {
+        "command": "incontext.copyFileReference",
+        "title": "Copy File Reference to Clipboard"
+      },
+      {
+        "command": "incontext.copyDirectoryReference",
+        "title": "Copy Directory Reference to Clipboard"
+      },
+      {
+        "command": "incontext.openReference",
+        "title": "Open Reference"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "incontext.copyCodeReference",
+        "key": "cmd+'",
+        "mac": "cmd+'",
+        "when": "editorTextFocus && editorHasSelection"
+      },
+      {
+        "command": "incontext.copyCodeReference",
+        "key": "cmd+'",
+        "mac": "cmd+'",
+        "when": "editorTextFocus && !editorHasSelection"
+      },
+      {
+        "command": "incontext.copyFileReference",
+        "key": "cmd+'",
+        "mac": "cmd+'",
+        "when": "filesExplorerFocus && !explorerResourceIsFolder && resourceSet"
+      },
+      {
+        "command": "incontext.copyDirectoryReference",
+        "key": "cmd+'",
+        "mac": "cmd+'",
+        "when": "filesExplorerFocus && explorerResourceIsFolder && resourceSet"
+      }
+    ],
+    "viewsContainers": {},
+    "views": {},
+    "menus": {
+      "editor/context": [
+        {
+          "when": "editorHasSelection",
+          "command": "incontext.copyCodeReference",
+          "group": "navigation"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "incontext.copyFileReference",
+          "when": "!explorerResourceIsFolder",
+          "group": "navigation"
+        },
+        {
+          "command": "incontext.copyDirectoryReference",
+          "when": "explorerResourceIsFolder",
+          "group": "navigation"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run package",
+    "compile": "npm run check-types && npm run lint && node esbuild.js",
+    "watch": "npm-run-all -p watch:*",
+    "watch:esbuild": "node esbuild.js --watch",
+    "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
+    "package": "npm run check-types && npm run lint && node esbuild.js --production",
+    "package-extension": "vsce package",
+    "compile-tests": "tsc -p . --outDir out",
+    "watch-tests": "tsc -p . -w --outDir out",
+    "pretest": "npm run compile-tests && npm run compile && npm run lint",
+    "check-types": "tsc --noEmit --project tsconfig.json",
+    "lint": "eslint src",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.96.0",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "20.x",
+    "@typescript-eslint/eslint-plugin": "^8.31.1",
+    "@typescript-eslint/parser": "^8.31.1",
+    "eslint": "^9.25.1",
+    "esbuild": "^0.25.3",
+    "npm-run-all": "^4.1.5",
+    "typescript": "^5.8.3",
+    "@vscode/test-cli": "^0.0.10",
+    "@vscode/test-electron": "^2.5.2"
+  }
+}
