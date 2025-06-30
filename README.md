@@ -1,5 +1,9 @@
 # Code Reference Extension
 
+<p align="center">
+  <img src="logo.png" alt="Code Reference Extension Logo" width="128" height="128">
+</p>
+
 A VS Code extension that provides easy code reference capabilities for your workspace. This extension allows you to create and navigate code references seamlessly, making it easier to reference specific code snippets and files in documentation, comments, AI prompts, or anywhere else in your project. When working with AI tools, these precise code references help you get more accurate responses by providing exact context about the code you're discussing.
 
 ## Features
@@ -34,7 +38,8 @@ A VS Code extension that provides easy code reference capabilities for your work
 
 1. **Paste references anywhere:** In comments, documentation, markdown files, etc.
 2. **Navigate to references:** 
-   - **File references:** Ctrl+Click on any file reference to open the file and jump to specific lines
+   - **Code references:** Ctrl+Click on any code reference to open the file and jump to the specific lines
+   - **File references:** Ctrl+Click on any file reference to open the file
    - **Directory references:** Ctrl+Click on any directory reference to select and reveal that directory in the Explorer
 3. **References are highlighted:** All references in your files are automatically highlighted as clickable links
 
