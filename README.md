@@ -1,156 +1,112 @@
-# Code Reference Extension
+# InContext
 
 <p align="center">
-  <img src="logo.png" alt="Code Reference Extension Logo" width="128" height="128">
+  <img src="logo.png" alt="InContext Logo" width="128" height="128">
 </p>
 
-A VS Code extension that provides easy code reference capabilities for your workspace. This extension allows you to create and navigate code references seamlessly, making it easier to reference specific code snippets and files in documentation, comments, AI prompts, or anywhere else in your project. When working with AI tools, these precise code references help you get more accurate responses by providing exact context about the code you're discussing.
+# 🧠 InContext for VS Code
 
-## Features
+**Prompt the right way. Structure your AI prompts naturally, with inline, pinpoint-accurate code references — delivering better LLM outputs, preserving your visual context, and enabling logical, easy-to-read prompts.**
 
-- **Copy Code References**: Easily create references to specific code selections with line numbers
-- **Copy File References**: Create references to entire files 
-- **Copy Directory References**: Create references to directories and folders
-- **Clickable References**: References in any file are automatically highlighted and clickable for navigation
-- **Smart Navigation**: Ctrl+Click on any reference to navigate directly to the referenced code or select directories in Explorer
-- **Workspace Awareness**: References include project names and relative paths for multi-folder workspaces
+## 🔑 Why This Matters
 
-## How It Works
+When crafting AI prompts, structure is everything. Traditional prompts that dump all context at the top, or attach files separately, confuse both humans and AI.
 
-### Creating References
+InContext lets you write prompts the way you think and communicate:
 
-1. **To create a code reference:**
-   - Select the code you want to reference in any file
-   - Press `cmd+'` (or use the context menu)
-   - A reference like `@ProjectName/path/to/file.js:L10:15` will be copied to your clipboard
+* You say "Look at this..."
+* The relevant code reference follows naturally, inline.
+* LLMs understand that "this" points precisely to the lines or file you reference—no ambiguity.
+* This results in:
 
-2. **To create a file reference:**
-   - **Option 1**: Right-click on any file in the Explorer and select "Copy File Reference to Clipboard"
-   - **Option 2**: Select a file in an editor and press `cmd+'`.
-   - A reference like `@ProjectName/path/to/file.js` will be copied to your clipboard
+  * More accurate, reliable AI outputs.
+  * Pinpoint control over what the LLM focuses on.
+  * Logical, English-like prompts that flow naturally.
 
-3. **To create a directory reference:**
-   - Right-click on any directory in the Explorer and select "Copy Directory Reference to Clipboard"
-   - Or select a directory in the Explorer and press `cmd+'`
-   - A reference like `@ProjectName/path/to/directory/` will be copied to your clipboard
+**This isn't just beautiful formatting—it's the correct, structured way to write prompts that maximize AI performance.**
 
-### Using References
+By embedding references inline, in logical order, you:
 
-1. **Paste references anywhere:** In comments, documentation, markdown files, etc.
-2. **Navigate to references:** 
-   - **Code references:** Ctrl+Click on any code reference to open the file and jump to the specific lines
-   - **File references:** Ctrl+Click on any file reference to open the file
-   - **Directory references:** Ctrl+Click on any directory reference to select and reveal that directory in the Explorer
-3. **References are highlighted:** All references in your files are automatically highlighted as clickable links
+* Give the LLM precise, localized context exactly where it's needed.
+* Avoid forcing the AI to "guess" from a giant, scattered context block.
+* Write better prompts, get better results.
 
-### Reference Format
+---
+**Why the New Way Wins:**
 
-References follow this format:
-- **Code references:** `@ProjectName/path/to/file.js:L10:15` (lines 10-15)
-- **File references:** `@ProjectName/path/to/file.js` (entire file)
-- **Directory references:** `@ProjectName/path/to/directory/` (directory - note the trailing slash)
+The new InContext prompting style gives you—and your AI—spatial awareness: you write prompts naturally, referencing code inline, exactly where it matters. This keeps you (the developer) in flow, lets you express your intent in logical, English-like order, and ensures the LLM receives precise, localized context. By crafting prompts with **surgical precision**, you make them not only easier for yourself to read and reason about, but also enable the LLM to interpret your intent and context with the same level of accuracy. The result? Dramatically higher quality, more accurate outputs. You get answers that are not only easier to verify, but also more relevant—because both you and the AI are always looking at the right code, at the right time.
 
-## Requirements
 
-- VS Code 1.96.0 or higher
-- A workspace folder must be open for proper file path resolution
+## 🖼️ Example
 
-## Keyboard Shortcuts
+Below is a real-world example showing the difference between the old and new ways of providing context to an LLM, using screenshots from the Spring Petclinic project:
 
-- `cmd+'`: 
-  - **With text selected**: Copy code reference from current selection to clipboard
-  - **Without text selected**: Copy file reference for the current file to clipboard
-  - **With directory selected in Explorer**: Copy directory reference to clipboard
+### Old way: LLM-Driven Search & Synthesis
 
-## Commands
+![Old Way](media/old.png)
 
-All commands are also available via the Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`):
+- The LLM receives a high-level question and performs a semantic search across the codebase.
+- It guesses which files are relevant and synthesizes an answer based on search results.
+- The answer is often general, referencing files and classes, but not always pointing to exact lines.
+- The process can be slower and less precise, especially if the search misses a key file or context.
 
-- **Copy Code Reference to Clipboard**: Creates a reference to the selected code
-- **Copy File Reference to Clipboard**: Creates a reference to a file
-- **Copy Directory Reference to Clipboard**: Creates a reference to a directory
-- **Open Reference**: Opens and navigates to a reference (used internally by clicking links)
+### New Way: Explicit Context Injection
+#### Prompt with InContext 🧘🏼‍♂️
+  ![New Prompt](media/new-prompt.png)
 
-## Context Menus
+#### Result 👌
+  ![New Way](media/new.png)
 
-- **Editor Context Menu**: Right-click on selected code to copy a code reference
-- **Explorer Context Menu**: Right-click on any file to copy a file reference, or on any directory to copy a directory reference
+- The user (or system) directly attaches the relevant files and line ranges to the LLM's context.
+- The LLM immediately has access to the exact code needed for the answer.
+- The answer can reference specific files and line numbers with precision.
+- The process is faster and more reliable, as it avoids unnecessary searching.
 
-## Known Issues
+#### **Key Benefits of the New Way**
+- **Precision:** Answers reference exact files and line numbers, making navigation easy.
+- **Efficiency:** No time wasted on searching or sifting through irrelevant results.
+- **Reliability:** Reduces the risk of missing important context or making incorrect assumptions.
+- **User Experience:** Users get actionable, context-rich answers that are easy to verify and follow up on.
 
-- References only work within the same workspace
-- Multi-workspace setups may require full paths for cross-workspace references
-- File paths are case-sensitive on some systems
-
-## Use Cases
-
-This extension is particularly useful for:
-
-- **Documentation**: Reference specific code sections in README files or documentation
-- **Code Reviews**: Quickly reference specific lines of code in comments
-- **Issue Tracking**: Include precise code references in bug reports
-- **AI Prompts**: Create structured prompts with specific code context
-- **Team Communication**: Share exact code locations with team members
-
-## Examples
-
-### In a Markdown file:
-```markdown
-The bug is in @MyProject/src/utils/parser.js:L45:50 where the validation logic fails.
-
-See the implementation in @MyProject/src/components/UserForm.tsx for reference.
-
-Check the test files in @MyProject/tests/unit/ for examples.
-```
-
-### In code comments:
-```javascript
-// TODO: Refactor this section - see @MyProject/src/legacy/oldParser.js:L100:120
-// for the original implementation that needs to be updated
-// All related test files are in @MyProject/tests/legacy/
-```
-
-## Troubleshooting
-
-If you encounter issues with the extension:
-
-1. **References not working**:
-   - Ensure you have a workspace folder open
-   - Check that file paths are correct and files exist
-   - For directories, make sure the directory exists and the reference ends with `/`
-   - Verify the reference format matches: `@ProjectName/path/to/file.js:L10:15` or `@ProjectName/path/to/directory/`
-
-2. **Navigation issues**:
-   - Make sure the referenced file exists in the workspace
-   - For directory references, ensure the directory exists and is accessible
-   - Check that line numbers are valid (within the file's line count)
-   - Try using absolute paths if relative paths fail
-
-3. **Clipboard issues**:
-   - Check if VS Code has clipboard permissions
-   - Try the command palette commands instead of keyboard shortcuts
-
-4. **View Extension Logs**:
-   - Open Developer Tools (`Ctrl+Shift+I` / `Cmd+Option+I`)
-   - Check the Console tab for error messages
-
-If problems persist, please report them on the GitHub repository.
-
-## Release Notes
-
-### 0.0.1
-
-Initial release of the Code Reference Extension.
-
-**Features:**
-- Copy code references to clipboard with line numbers
-- Copy file references to clipboard  
-- Copy directory references to clipboard
-- Automatic highlighting and navigation of references in all files
-- Context menu integration for easy reference creation
-- Keyboard shortcut support
-- Multi-workspace aware reference formatting
+> **Best Practice:**
+> Whenever possible, provide the LLM with the exact files and line ranges relevant to the question. This enables the LLM to deliver answers that are both accurate and immediately useful, especially for code navigation and review tasks.
 
 ---
 
-**Enjoy creating and navigating code references!**
+## ✨ Why the New Way is Better
+
+- **Pinpoint Accuracy & Surgical Precision:** Every claim is backed by a direct, clickable reference to the codebase, often with line numbers. Prompts are crafted with surgical precision, benefiting both human readers and the LLM.
+- **Instant Verification:** You can check any statement by clicking the link—no more manual searching.
+- **Always Up-to-Date:** Answers are grounded in the current code, not memory or guesswork.
+- **Superior Collaboration:** Share prompts and answers with teammates; everyone can instantly navigate to the relevant code.
+- **Cleaner Prompts:** Inline references keep your visual context clean and logical, making prompts easier to write, read, and reuse.
+
+**InContext is the right way to write prompts—maximizing AI performance, developer confidence, and team productivity.**
+
+---
+
+### 💡 Inspired by WindSurf
+
+The inspiration for this type of prompting came from **WindSurf IDE**, which introduced the idea of connecting code context to prompts.
+
+
+### 🌐 Flexible, Universal Usage
+
+* You can embed these references **anywhere** — in `.txt` files, `.md` files, code comments, documentation, AI prompts, or chat tools.
+* References are fully **clickable**, regardless of file type.
+* Great for connecting different parts of your codebase with in-code, bidirectional links.
+* Ideal for enhancing documentation, linking to other files with precise, interactive references.
+* Share prompts with your team, preserving full click-through context for consistent collaboration.
+
+### 💡 This is the right way to write prompts.
+
+Stop forcing rigid "context blocks" and losing clarity. Start writing naturally—with precise, inline references that:
+
+* Preserve your visual context.
+* Provide AI with correct, ordered, logical knowledge.
+* Give your prompts pinpoint, localized context.
+* Improve AI output quality.
+* Keep your workspace clean, navigable, and intuitive.
+* Create reusable, shareable, context-rich prompts for your team.
+
+
