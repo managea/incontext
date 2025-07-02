@@ -4,8 +4,6 @@
   <img src="logo.png" alt="InContext Logo" width="128" height="128">
 </p>
 
-# 🧠 InContext for VS Code
-
 **Prompt the right way. Structure your AI prompts naturally, with inline, pinpoint-accurate code references — delivering better LLM outputs, preserving your visual context, and enabling logical, easy-to-read prompts.**
 
 ## 🔑 Why This Matters
@@ -18,10 +16,10 @@ InContext lets you write prompts the way you think and communicate:
 * The relevant code reference follows naturally, inline.
 * LLMs understand that "this" points precisely to the lines or file you reference—no ambiguity.
 * This results in:
-
   * More accurate, reliable AI outputs.
   * Pinpoint control over what the LLM focuses on.
   * Logical, English-like prompts that flow naturally.
+
 
 **This isn't just beautiful formatting—it's the correct, structured way to write prompts that maximize AI performance.**
 
@@ -32,6 +30,7 @@ By embedding references inline, in logical order, you:
 * Write better prompts, get better results.
 
 ---
+
 **Why the New Way Wins:**
 
 The new InContext prompting style gives you—and your AI—spatial awareness: you write prompts naturally, referencing code inline, exactly where it matters. This keeps you (the developer) in flow, lets you express your intent in logical, English-like order, and ensures the LLM receives precise, localized context. By crafting prompts with **surgical precision**, you make them not only easier for yourself to read and reason about, but also enable the LLM to interpret your intent and context with the same level of accuracy. The result? Dramatically higher quality, more accurate outputs. You get answers that are not only easier to verify, but also more relevant—because both you and the AI are always looking at the right code, at the right time.
