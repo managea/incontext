@@ -1,7 +1,7 @@
 {
   "name": "incontext",
   "displayName": "Code Reference Extension",
-  "description": "A VS Code extension that provides easy code reference capabilities for your workspace. This extension allows you to create and navigate code references seamlessly, making it easier to reference specific code snippets and files in documentation, comments, AI prompts, or anywhere else in your project. When working with AI tools, these precise code references help you get more accurate responses by providing exact context about the code you're discussing.",
+  "description": "Prompt the right way. Structure your AI prompts naturally, with inline, pinpoint-accurate code references — delivering better LLM outputs, preserving your visual context, and enabling logical, easy-to-read prompts.",
   "publisher": "managea",
   "version": "0.0.1",
   "icon": "icon.png",
@@ -29,7 +29,9 @@
   ],
   "main": "./dist/extension.js",
   "extensionDependencies": [],
-  "extensionKind": ["workspace"],
+  "extensionKind": [
+    "workspace"
+  ],
   "capabilities": {
     "untrustedWorkspaces": {
       "supported": true
