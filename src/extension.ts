@@ -1,3 +1,4 @@
+// ...existing code...
 // Utility: Read lines from a file
 async function readFileLines(uri: vscode.Uri, start: number, end: number): Promise<string[]> {
   try {
@@ -198,6 +199,21 @@ async function openFileReference(reference: string) {
 
 // This method is called when your extension is activated
 export function activate(context: vscode.ExtensionContext) {
+  // Inline decoration type for 'Reference copied!'
+  const referenceCopiedDecorationType = vscode.window.createTextEditorDecorationType({
+    after: {
+      contentText: 'Reference added to clipboard!',
+      color: '#4caf50',
+      margin: '0 0 0 1em',
+      fontWeight: 'bold',
+      textDecoration: 'none; font-size: 1.2em; padding: 0.15em 0.7em;',
+      // backgroundColor: 'rgba(255,255,255,0.8)',
+      border: '1px solid #78b37aff',
+      fontStyle: 'italic',
+    },
+    rangeBehavior: vscode.DecorationRangeBehavior.ClosedClosed,
+  });
+  context.subscriptions.push(referenceCopiedDecorationType);
   // Register HoverProvider and DocumentLinkProvider for code references
   const referenceProvider = new ReferenceProvider();
   context.subscriptions.push(
@@ -238,6 +254,8 @@ export function activate(context: vscode.ExtensionContext) {
 
 
   // Register command to copy code reference to clipboard
+
+
   context.subscriptions.push(
     vscode.commands.registerCommand('incontext.copyCodeReference', async () => {
       Logger.log('Copy code reference command triggered');
@@ -255,6 +273,15 @@ export function activate(context: vscode.ExtensionContext) {
           reference = ReferenceUtils.createCodeReference(editor.document.uri, selection);
         }
         await vscode.env.clipboard.writeText(reference);
+        // Inline decoration: show 'Reference copied!' near selection
+        const range = selection.isEmpty
+          ? new vscode.Range(selection.start, selection.start)
+          : new vscode.Range(selection.end, selection.end);
+        editor.setDecorations(referenceCopiedDecorationType, [
+          { range, hoverMessage: 'Reference copied to clipboard!' }
+        ]);
+        await new Promise(resolve => setTimeout(resolve, 1200));
+        editor.setDecorations(referenceCopiedDecorationType, []);
         Logger.log('Reference copied to clipboard:', reference);
       } catch (error) {
         vscode.window.showErrorMessage(`Failed to copy reference: ${error instanceof Error ? error.message : String(error)}`);
@@ -300,7 +327,16 @@ export function activate(context: vscode.ExtensionContext) {
       }
       try {
         const reference = ReferenceUtils.createFileReference(fileUri);
-        await vscode.env.clipboard.writeText(reference);
+        await vscode.window.withProgress({
+          location: vscode.ProgressLocation.Notification,
+          title: 'Reference added to clipboard',
+          cancellable: false
+        }, async (progress) => {
+          progress.report({ increment: 0 });
+          await vscode.env.clipboard.writeText(reference);
+          await new Promise(resolve => setTimeout(resolve, 800));
+          progress.report({ increment: 100 });
+        });
         Logger.log('File reference copied to clipboard:', reference);
       } catch (error) {
         vscode.window.showErrorMessage(`Error copying file reference: ${error instanceof Error ? error.message : String(error)}`);
@@ -350,7 +386,16 @@ export function activate(context: vscode.ExtensionContext) {
       }
       try {
         const reference = ReferenceUtils.createDirectoryReference(directoryUri);
-        await vscode.env.clipboard.writeText(reference);
+        await vscode.window.withProgress({
+          location: vscode.ProgressLocation.Notification,
+          title: 'Reference added to clipboard',
+          cancellable: false
+        }, async (progress) => {
+          progress.report({ increment: 0 });
+          await vscode.env.clipboard.writeText(reference);
+          await new Promise(resolve => setTimeout(resolve, 800));
+          progress.report({ increment: 100 });
+        });
         Logger.log('Directory reference copied to clipboard:', reference);
       } catch (error) {
         vscode.window.showErrorMessage(`Error copying directory reference: ${error instanceof Error ? error.message : String(error)}`);
