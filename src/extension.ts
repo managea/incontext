@@ -12,189 +12,14 @@ async function readFileLines(uri: vscode.Uri, start: number, end: number): Promi
   }
 }
 // Simple Code Reference Extension
+
 import * as vscode from 'vscode';
+import { ReferenceProvider } from './ReferenceProvider';
+import { ReferenceUtils } from './ReferenceUtils';
+import { ReferenceDecoration } from './ReferenceDecoration';
+import { Logger } from './Logger';
 
-// Decoration types for long path compression
-let compressedPathDecoration: vscode.TextEditorDecorationType;
-let highlightedPathDecoration: vscode.TextEditorDecorationType;
 
-// Regex pattern for matching references - centralized to avoid duplication
-const REFERENCE_PATTERN = /@([^\s@]+(?::[^:\s]*)*\/?)/g;
-
-/**
- * Simple logging helper - can be easily disabled for production
- */
-const DEBUG = false; // Set to false to disable debug logging
-function debugLog(...args: any[]) {
-  if (DEBUG) {
-    console.log(...args);
-  }
-}
-
-/**
- * Helper function to resolve workspace-relative path and project name
- */
-function resolveWorkspacePath(uri: vscode.Uri): { relativePath: string; projectName: string } {
-  const workspaceFolders = vscode.workspace.workspaceFolders;
-  if (!workspaceFolders) {
-    return { relativePath: '', projectName: '' };
-  }
-
-  for (const folder of workspaceFolders) {
-    if (uri.fsPath.startsWith(folder.uri.fsPath)) {
-      let relativePath = uri.fsPath.substring(folder.uri.fsPath.length);
-      
-      // Remove leading slash or backslash
-      if (relativePath.startsWith('/') || relativePath.startsWith('\\')) {
-        relativePath = relativePath.substring(1);
-      }
-      
-      return { relativePath, projectName: folder.name };
-    }
-  }
-
-  return { relativePath: '', projectName: '' };
-}
-
-/**
- * Helper function to create a code reference string
- */
-function createCodeReference(fileUri: vscode.Uri, selection: vscode.Selection): string {
-  const { relativePath, projectName } = resolveWorkspacePath(fileUri);
-  
-  if (!relativePath) {
-    return `@${fileUri.fsPath}:L${selection.start.line + 1}:${selection.end.line + 1}`;
-  }
-
-  // Create the reference string
-  const startLine = selection.start.line + 1; // Lines are 0-based in vscode
-  const endLine = selection.end.line + 1;
-  return `@${projectName}/${relativePath}:L${startLine}:${endLine}`;
-}
-
-/**
- * Apply visual compression to long file references
- */
-function applyPathCompressionDecorations(editor: vscode.TextEditor) {
-  const document = editor.document;
-  const compressedDecorations: vscode.DecorationOptions[] = [];
-  const highlightedDecorations: vscode.DecorationOptions[] = [];
-  
-  for (let lineIndex = 0; lineIndex < document.lineCount; lineIndex++) {
-    const line = document.lineAt(lineIndex);
-    const text = line.text;
-    
-    let match;
-    REFERENCE_PATTERN.lastIndex = 0;
-    
-    while ((match = REFERENCE_PATTERN.exec(text)) !== null) {
-      const fullReference = match[0];
-      const matchStart = match.index;
-      
-      const pathPart = fullReference.substring(1); // Remove @
-      const pathParts = pathPart.split('/');
-      
-      if (pathParts.length > 1) { // At least project/file
-        let currentPos = matchStart + 1; // Skip @
-        
-        const projectName = pathParts[0];
-        
-        // For directory references ending with '/', the last part is empty, so get the second-to-last
-        const isDirectoryReference = fullReference.endsWith('/');
-        let lastSegment: string;
-        
-        if (isDirectoryReference) {
-          // For directories, get the actual directory name (second-to-last part)
-          lastSegment = pathParts.length > 2 ? pathParts[pathParts.length - 2] : pathParts[0];
-        } else {
-          // For files, get the last part (filename)
-          lastSegment = pathParts[pathParts.length - 1];
-        }
-        
-        // Always highlight project name for all references
-        highlightedDecorations.push({
-          range: new vscode.Range(lineIndex, currentPos, lineIndex, currentPos + projectName.length),
-          hoverMessage: `Project: ${projectName}\nFull path: ${fullReference}`
-        });
-        
-        // For long references with many path segments, hide the middle part
-        if (pathParts.length > 3) {
-          currentPos += projectName.length + 1; // +1 for /
-          
-          // Find the start of the last segment
-          let lastSegmentStart: number;
-          if (isDirectoryReference) {
-            // For directories, find the second-to-last segment
-            const secondLastSlashIndex = fullReference.lastIndexOf('/', fullReference.length - 2);
-            lastSegmentStart = matchStart + secondLastSlashIndex + 1;
-          } else {
-            // For files, find the last segment
-            const lastSlashIndex = fullReference.lastIndexOf('/');
-            lastSegmentStart = matchStart + lastSlashIndex + 1;
-          }
-          
-          // Hide everything between project name and last segment
-          if (lastSegmentStart > currentPos) {
-            compressedDecorations.push({
-              range: new vscode.Range(lineIndex, currentPos, lineIndex, lastSegmentStart - 1),
-              hoverMessage: `Full path: ${fullReference}`
-            });
-          }
-        }
-        
-        // Always highlight the last segment (filename or directory name)
-        let lastSegmentStart: number;
-        if (isDirectoryReference) {
-          // For directories, find the second-to-last segment
-          const secondLastSlashIndex = fullReference.lastIndexOf('/', fullReference.length - 2);
-          lastSegmentStart = matchStart + secondLastSlashIndex + 1;
-        } else {
-          // For files, find the last segment
-          const lastSlashIndex = fullReference.lastIndexOf('/');
-          lastSegmentStart = matchStart + lastSlashIndex + 1;
-        }
-        
-        const segmentType = isDirectoryReference ? 'Directory' : 'File';
-        highlightedDecorations.push({
-          range: new vscode.Range(lineIndex, lastSegmentStart, lineIndex, lastSegmentStart + lastSegment.length),
-          hoverMessage: `${segmentType}: ${lastSegment}`
-        });
-      }
-    }
-  }
-  
-  // Apply decorations
-  editor.setDecorations(compressedPathDecoration, compressedDecorations);
-  editor.setDecorations(highlightedPathDecoration, highlightedDecorations);
-}
-
-/**
- * Helper function to create a file reference string
- */
-function createFileReference(fileUri: vscode.Uri): string {
-  const { relativePath, projectName } = resolveWorkspacePath(fileUri);
-  
-  if (!relativePath) {
-    return `@${fileUri.fsPath}`;
-  }
-
-  return `@${projectName}/${relativePath}`;
-}
-
-/**
- * Helper function to create a directory reference string
- */
-function createDirectoryReference(directoryUri: vscode.Uri): string {
-  const { relativePath, projectName } = resolveWorkspacePath(directoryUri);
-  
-  if (!relativePath) {
-    return `@${directoryUri.fsPath}/`;
-  }
-
-  // Ensure the directory reference ends with a slash to distinguish from file references
-  const reference = `@${projectName}/${relativePath}`;
-  return reference.endsWith('/') ? reference : `${reference}/`;
-}
 
 /**
  * Open and navigate to a file reference
@@ -202,7 +27,7 @@ function createDirectoryReference(directoryUri: vscode.Uri): string {
  */
 async function openReference(reference: string) {
   try {
-    debugLog('Opening reference:', reference);
+    Logger.log('Opening reference:', reference);
     
     // Check if this is a directory reference (ends with /)
     const isDirectoryReference = reference.endsWith('/');
@@ -224,7 +49,7 @@ async function openReference(reference: string) {
  * Open and select a directory reference in the explorer
  */
 async function openDirectoryReference(reference: string) {
-  debugLog('Opening directory reference:', reference);
+  Logger.log('Opening directory reference:', reference);
   
   // Remove the @ prefix and trailing slash
   const pathWithoutPrefix = reference.substring(1, reference.length - 1);
@@ -252,7 +77,7 @@ async function openDirectoryReference(reference: string) {
       targetWorkspaceFolder = matchingFolder;
       directoryRelativePath = pathParts.slice(1).join('/');
     } else {
-      debugLog('No matching workspace folder found, using full path as relative');
+      Logger.log('No matching workspace folder found, using full path as relative');
       directoryRelativePath = pathWithoutPrefix;
     }
   }
@@ -279,7 +104,7 @@ async function openDirectoryReference(reference: string) {
   try {
     await vscode.commands.executeCommand('revealInExplorer', directoryUri);
     await vscode.commands.executeCommand('workbench.view.explorer');
-    debugLog('Successfully selected directory in explorer:', directoryUri.fsPath);
+    Logger.log('Successfully selected directory in explorer:', directoryUri.fsPath);
   } catch (error) {
     console.error('Failed to reveal directory in explorer:', error);
     // Fallback: try to reveal the parent and then navigate
@@ -295,7 +120,7 @@ async function openDirectoryReference(reference: string) {
  * Open and navigate to a file reference
  */
 async function openFileReference(reference: string) {
-  debugLog('Opening file reference:', reference);
+  Logger.log('Opening file reference:', reference);
   
   // Parse the reference to extract file path and line numbers
   // Expected format: @project/path/to/file.js:L10:20 or @project/path/to/file.js
@@ -333,7 +158,7 @@ async function openFileReference(reference: string) {
       targetWorkspaceFolder = matchingFolder;
       fileRelativePath = pathParts.slice(1).join('/');
     } else {
-      debugLog('No matching workspace folder found, using full path as relative');
+      Logger.log('No matching workspace folder found, using full path as relative');
       fileRelativePath = fullPath;
     }
   }
@@ -368,237 +193,100 @@ async function openFileReference(reference: string) {
   // Reveal the range in the editor
   editor.revealRange(selection, vscode.TextEditorRevealType.InCenter);
   
-  debugLog('Successfully opened file:', fileUri.fsPath, 'at lines', startLine + 1, '-', endLine + 1);
+  Logger.log('Successfully opened file:', fileUri.fsPath, 'at lines', startLine + 1, '-', endLine + 1);
 }
 
 // This method is called when your extension is activated
 export function activate(context: vscode.ExtensionContext) {
-  // Register HoverProvider for code previews on reference hover
+  // Register HoverProvider and DocumentLinkProvider for code references
+  const referenceProvider = new ReferenceProvider();
   context.subscriptions.push(
-    vscode.languages.registerHoverProvider({ scheme: 'file' }, {
-      async provideHover(document, position, token) {
-        const line = document.lineAt(position.line).text;
-        let match;
-        REFERENCE_PATTERN.lastIndex = 0;
-        while ((match = REFERENCE_PATTERN.exec(line)) !== null) {
-          const matchStart = match.index;
-          const matchEnd = match.index + match[0].length;
-          if (position.character >= matchStart && position.character <= matchEnd) {
-            const reference = match[0];
-            // Directory reference: @project/path/
-            if (reference.endsWith('/')) {
-              const dirMatch = reference.match(/^@(.+)\/$/);
-              if (!dirMatch) return;
-              const fullPath = dirMatch[1];
-              const workspaceFolders = vscode.workspace.workspaceFolders;
-              if (!workspaceFolders) return;
-              let targetWorkspaceFolder = workspaceFolders[0];
-              let dirRelativePath = fullPath;
-              const pathParts = fullPath.split('/');
-              if (pathParts.length > 1) {
-                const projectName = pathParts[0];
-                const matchingFolder = workspaceFolders.find(f => f.name === projectName);
-                if (matchingFolder) {
-                  targetWorkspaceFolder = matchingFolder;
-                  dirRelativePath = pathParts.slice(1).join('/');
-                }
-              }
-              const dirUri = vscode.Uri.joinPath(targetWorkspaceFolder.uri, dirRelativePath);
-              let entries: vscode.FileType[] = [];
-              let entryNames: string[] = [];
-              try {
-                const dirList = await vscode.workspace.fs.readDirectory(dirUri);
-                entries = dirList.map(([name, type]) => type);
-                entryNames = dirList.map(([name, type]) => {
-                  if (type & vscode.FileType.Directory) return `📁 ${name}/`;
-                  if (type & vscode.FileType.SymbolicLink) return `🔗 ${name}`;
-                  return `📄 ${name}`;
-                });
-              } catch (e) {
-                entryNames = [`Error reading directory: ${e instanceof Error ? e.message : String(e)}`];
-              }
-              const md = new vscode.MarkdownString(
-                `**Contents of \`${reference}\`**\n\n` +
-                (entryNames.length ? entryNames.join('  \n') : '_(empty)_')
-              );
-              md.isTrusted = true;
-              return new vscode.Hover(md);
-            } else {
-              // Only handle file references with optional line numbers
-              const refMatch = reference.match(/^@(.+?)(?::L(\d+)(?::(\d+))?)?$/);
-              if (!refMatch) return;
-              const [, fullPath, startLineStr, endLineStr] = refMatch;
-              // Find workspace folder
-              const workspaceFolders = vscode.workspace.workspaceFolders;
-              if (!workspaceFolders) return;
-              let targetWorkspaceFolder = workspaceFolders[0];
-              let fileRelativePath = fullPath;
-              const pathParts = fullPath.split('/');
-              if (pathParts.length > 1) {
-                const projectName = pathParts[0];
-                const matchingFolder = workspaceFolders.find(f => f.name === projectName);
-                if (matchingFolder) {
-                  targetWorkspaceFolder = matchingFolder;
-                  fileRelativePath = pathParts.slice(1).join('/');
-                }
-              }
-              const fileUri = vscode.Uri.joinPath(targetWorkspaceFolder.uri, fileRelativePath);
-              let startLine = 0, endLine = 0;
-              if (startLineStr) {
-                startLine = Math.max(0, parseInt(startLineStr, 10) - 1);
-                endLine = endLineStr ? Math.max(0, parseInt(endLineStr, 10) - 1) : startLine;
-              }
-              // Read lines and show preview
-              const lines = await readFileLines(fileUri, startLine, endLine);
-              const ext = fileUri.path.split('.').pop() || '';
-              const lang = ext.match(/^[a-zA-Z0-9]+$/) ? ext : '';
-              const codeBlock = '```' + lang + '\n' + lines.join('\n') + '\n```';
-              const md = new vscode.MarkdownString(`**Preview of \`${reference}\`**\n\n${codeBlock}`);
-              md.isTrusted = true;
-              return new vscode.Hover(md);
-            }
-          }
-        }
-        return;
-      }
-    })
+    vscode.languages.registerHoverProvider({ scheme: 'file' }, referenceProvider)
   );
+  context.subscriptions.push(
+    vscode.languages.registerDocumentLinkProvider({ scheme: 'file' }, referenceProvider)
+  );
+
   console.log('Extension "incontext" is now active!');
 
-  // Initialize decoration types for path compression
-  compressedPathDecoration = vscode.window.createTextEditorDecorationType({
-    opacity: '0', // Make completely invisible
-    letterSpacing: '-100em', // Aggressive negative spacing to compress
-    textDecoration: 'none', // Remove any underlines
-    after: {
-      contentText: '...',
-      color: new vscode.ThemeColor('editorLineNumber.foreground'),
-      fontStyle: 'italic'
-    }
-  });
 
-  highlightedPathDecoration = vscode.window.createTextEditorDecorationType({
-    opacity: '1.0',
-    fontWeight: 'bold',
-    color: new vscode.ThemeColor('textLink.foreground')
-  });
-
-  // Clean up decorations when extension is deactivated
-  context.subscriptions.push(compressedPathDecoration);
-  context.subscriptions.push(highlightedPathDecoration);
-
-  // Apply decorations to the current active editor
+  // Apply path compression decorations
+  context.subscriptions.push(ReferenceDecoration.compressedPathDecoration);
+  context.subscriptions.push(ReferenceDecoration.highlightedPathDecoration);
   if (vscode.window.activeTextEditor) {
-    applyPathCompressionDecorations(vscode.window.activeTextEditor);
+    ReferenceDecoration.applyPathCompressionDecorations(vscode.window.activeTextEditor, /@([^\s@]+(?::[^:\s]*)*\/?)/g);
   }
-
-  // Apply decorations when active editor changes
   context.subscriptions.push(
     vscode.window.onDidChangeActiveTextEditor(editor => {
       if (editor) {
-        applyPathCompressionDecorations(editor);
+        ReferenceDecoration.applyPathCompressionDecorations(editor, /@([^\s@]+(?::[^:\s]*)*\/?)/g);
       }
     })
   );
-
-  // Apply decorations when document content changes
   context.subscriptions.push(
     vscode.workspace.onDidChangeTextDocument(event => {
       const editor = vscode.window.activeTextEditor;
       if (editor && event.document === editor.document) {
-        // Debounce the decoration update
         setTimeout(() => {
           if (vscode.window.activeTextEditor === editor) {
-            applyPathCompressionDecorations(editor);
+            ReferenceDecoration.applyPathCompressionDecorations(editor, /@([^\s@]+(?::[^:\s]*)*\/?)/g);
           }
         }, 500);
       }
     })
   );
 
+
   // Register command to copy code reference to clipboard
   context.subscriptions.push(
     vscode.commands.registerCommand('incontext.copyCodeReference', async () => {
-      debugLog('Copy code reference command triggered');
-      
+      Logger.log('Copy code reference command triggered');
       const editor = vscode.window.activeTextEditor;
       if (!editor) {
-        const error = 'No active editor';
-        console.error(error);
-        vscode.window.showErrorMessage(error);
+        vscode.window.showErrorMessage('No active editor');
         return;
       }
-
       const selection = editor.selection;
-      
       try {
         let reference: string;
-        
         if (selection.isEmpty) {
-          // No text selected - copy file reference without line numbers
-          reference = createFileReference(editor.document.uri);
+          reference = ReferenceUtils.createFileReference(editor.document.uri);
         } else {
-          // Text selected - copy code reference with line numbers
-          reference = createCodeReference(editor.document.uri, selection);
+          reference = ReferenceUtils.createCodeReference(editor.document.uri, selection);
         }
-        
-        // Copy to clipboard
         await vscode.env.clipboard.writeText(reference);
-        
-        debugLog('Reference copied to clipboard:', reference);
+        Logger.log('Reference copied to clipboard:', reference);
       } catch (error) {
-        console.error('Error in copyCodeReference:', error);
-        const errorMsg = `Failed to copy reference: ${error instanceof Error ? error.message : String(error)}`;
-        vscode.window.showErrorMessage(errorMsg);
+        vscode.window.showErrorMessage(`Failed to copy reference: ${error instanceof Error ? error.message : String(error)}`);
       }
     })
   );
 
+
   // Register command to copy file reference from explorer context menu or keyboard shortcut
   context.subscriptions.push(
     vscode.commands.registerCommand('incontext.copyFileReference', async (resource?: vscode.Uri) => {
-      debugLog('Copy file reference command triggered, resource:', resource?.fsPath);
-      
+      Logger.log('Copy file reference command triggered, resource:', resource?.fsPath);
       let fileUri: vscode.Uri | undefined;
-      
-      // First, try to use the resource parameter (from context menu)
       if (resource instanceof vscode.Uri) {
         fileUri = resource;
       } else {
-        // For keyboard shortcuts from explorer, we need a different approach
-        // Try to get the selected file by using the copyFilePath command
-        // and then parsing the clipboard content
         try {
           const originalClipboard = await vscode.env.clipboard.readText();
-          
-          // Execute the built-in copy file path command (returns absolute path)
-          // This command works with the current explorer selection
           await vscode.commands.executeCommand('copyFilePath');
-          
-          // Small delay to ensure the command completes
           await new Promise(resolve => setTimeout(resolve, 100));
-          
-          // Get the result from clipboard
           const absolutePath = await vscode.env.clipboard.readText();
-          
-          // Check if we got a valid path and it's different from original
           if (absolutePath && absolutePath !== originalClipboard && absolutePath.trim() !== '') {
-            // The copyFilePath command returns an absolute path, create URI directly
             try {
               fileUri = vscode.Uri.file(absolutePath.trim());
             } catch (error) {
-              console.error('Failed to create URI from absolute path:', error);
+              Logger.log('Failed to create URI from absolute path:', error);
             }
           }
-          
-          // Restore original clipboard content
           await vscode.env.clipboard.writeText(originalClipboard);
-          
         } catch (error) {
-          console.error('Error getting explorer selection via clipboard:', error);
+          Logger.log('Error getting explorer selection via clipboard:', error);
         }
-        
-        // Fallback to active editor if clipboard approach failed
         if (!fileUri) {
           const editor = vscode.window.activeTextEditor;
           if (editor) {
@@ -606,108 +294,65 @@ export function activate(context: vscode.ExtensionContext) {
           }
         }
       }
-      
       if (!fileUri) {
-        const error = 'No file selected. Please select a file in the Explorer or open a file in the editor.';
-        console.error(error);
-        vscode.window.showErrorMessage(error);
+        vscode.window.showErrorMessage('No file selected. Please select a file in the Explorer or open a file in the editor.');
         return;
       }
-      
       try {
-        // Create the file reference
-        const reference = createFileReference(fileUri);
-        
-        // Copy to clipboard (restore the original clipboard approach)
+        const reference = ReferenceUtils.createFileReference(fileUri);
         await vscode.env.clipboard.writeText(reference);
-        
-        debugLog('File reference copied to clipboard:', reference);
-        
+        Logger.log('File reference copied to clipboard:', reference);
       } catch (error) {
-        console.error('Error in copyFileReference:', error);
         vscode.window.showErrorMessage(`Error copying file reference: ${error instanceof Error ? error.message : String(error)}`);
       }
     })
   );
 
+
   // Register command to copy directory reference from explorer context menu or keyboard shortcut
   context.subscriptions.push(
     vscode.commands.registerCommand('incontext.copyDirectoryReference', async (resource?: vscode.Uri) => {
-      debugLog('Copy directory reference command triggered, resource:', resource?.fsPath);
-      
+      Logger.log('Copy directory reference command triggered, resource:', resource?.fsPath);
       let directoryUri: vscode.Uri | undefined;
-      
-      // First, try to use the resource parameter (from context menu)
       if (resource instanceof vscode.Uri) {
         directoryUri = resource;
       } else {
-        // For keyboard shortcuts from explorer, we need a different approach
-        // Try to get the selected directory by using the copyFilePath command
-        // and then parsing the clipboard content
         try {
           const originalClipboard = await vscode.env.clipboard.readText();
-          
-          // Execute the built-in copy file path command (returns absolute path)
-          // This command works with the current explorer selection
           await vscode.commands.executeCommand('copyFilePath');
-          
-          // Small delay to ensure the command completes
           await new Promise(resolve => setTimeout(resolve, 100));
-          
-          // Get the result from clipboard
           const absolutePath = await vscode.env.clipboard.readText();
-          
-          // Check if we got a valid path and it's different from original
           if (absolutePath && absolutePath !== originalClipboard && absolutePath.trim() !== '') {
-            // The copyFilePath command returns an absolute path, create URI directly
             try {
               directoryUri = vscode.Uri.file(absolutePath.trim());
             } catch (error) {
-              console.error('Failed to create URI from absolute path:', error);
+              Logger.log('Failed to create URI from absolute path:', error);
             }
           }
-          
-          // Restore original clipboard content
           await vscode.env.clipboard.writeText(originalClipboard);
-          
         } catch (error) {
-          console.error('Error getting explorer selection via clipboard:', error);
+          Logger.log('Error getting explorer selection via clipboard:', error);
         }
       }
-      
       if (!directoryUri) {
-        const error = 'No directory selected. Please select a directory in the Explorer.';
-        console.error(error);
-        vscode.window.showErrorMessage(error);
+        vscode.window.showErrorMessage('No directory selected. Please select a directory in the Explorer.');
         return;
       }
-      
-      // Verify that the selected item is actually a directory
       try {
         const stat = await vscode.workspace.fs.stat(directoryUri);
         if (!(stat.type & vscode.FileType.Directory)) {
-          const error = 'Selected item is not a directory. Please select a directory in the Explorer.';
-          console.error(error);
-          vscode.window.showErrorMessage(error);
+          vscode.window.showErrorMessage('Selected item is not a directory. Please select a directory in the Explorer.');
           return;
         }
       } catch (error) {
-        console.error('Error checking if path is directory:', error);
         vscode.window.showErrorMessage(`Error accessing directory: ${error instanceof Error ? error.message : String(error)}`);
         return;
       }
-      
       try {
-        // Create the directory reference
-        const reference = createDirectoryReference(directoryUri);
-        
-        // Copy to clipboard
+        const reference = ReferenceUtils.createDirectoryReference(directoryUri);
         await vscode.env.clipboard.writeText(reference);
-        
-        debugLog('Directory reference copied to clipboard:', reference);
-        
+        Logger.log('Directory reference copied to clipboard:', reference);
       } catch (error) {
-        console.error('Error in copyDirectoryReference:', error);
         vscode.window.showErrorMessage(`Error copying directory reference: ${error instanceof Error ? error.message : String(error)}`);
       }
     })
@@ -735,9 +380,10 @@ export function activate(context: vscode.ExtensionContext) {
             
             // Find all references in the line
             let match;
-            REFERENCE_PATTERN.lastIndex = 0; // Reset regex
+            const pattern = /@([^\s@]+(?::[^:\s]*)*\/?)/g;
+            pattern.lastIndex = 0; // Reset regex
             
-            while ((match = REFERENCE_PATTERN.exec(text)) !== null) {
+            while ((match = pattern.exec(text)) !== null) {
               const matchStart = match.index;
               const matchEnd = match.index + match[0].length;
               const reference = match[0];
