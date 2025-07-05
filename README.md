@@ -1,3 +1,4 @@
+
 # InContext
 
 <p align="center">
@@ -5,6 +6,59 @@
 </p>
 
 **Prompt the right way. Structure your AI prompts naturally, with inline, pinpoint-accurate code references — delivering better LLM outputs, preserving your visual context, and enabling logical, easy-to-read prompts.**
+
+---
+
+## 🚀 Features
+
+- **Inline, Clickable Code References:** Instantly copy and share references to files, folders, or code ranges in your workspace, using the `@project/path/to/file:L10:20` format.
+- **Beautiful Inline Feedback:** When you copy a reference, a large, styled inline message (`Reference added to clipboard!`) appears next to your selection or cursor, with a border and padding for clarity.
+- **Explorer & Editor Integration:** Copy references from the editor or the file/folder context menu in the Explorer.
+- **Hover Previews:** Hover over a reference to preview code or see folder contents.
+- **Keyboard Shortcuts:** Use <kbd>Cmd</kbd>+<kbd>'</kbd> to copy references quickly.
+- **No intrusive popups:** All feedback is inline and non-blocking.
+
+---
+
+## 🛠️ Usage
+
+### Copy a Code Reference
+
+- **From the Editor:**
+  - Select code, right-click, and choose **Copy Code Reference to Clipboard** (or press <kbd>Cmd</kbd>+<kbd>'</kbd>).
+  - If no selection, copies a reference to the current file.
+  - An inline message will appear: <span style="color:#4caf50; font-weight:bold; border:1px solid #78b37aff; padding:0.15em 0.7em; font-size:1.2em;">Reference added to clipboard!</span>
+
+- **From the Explorer:**
+  - Right-click a file or folder and choose **Copy File Reference** or **Copy Directory Reference**.
+
+### Paste the Reference
+
+- Paste anywhere: in markdown, code comments, prompts, or chat tools. The reference is clickable and will open the file/lines in VS Code.
+
+### Hover for Preview
+
+- Hover over a reference to preview code or see folder contents inline.
+
+---
+
+## 📦 Installation
+
+1. Download the latest `.vsix` file from your build (e.g., `incontext-1.0.1.vsix`).
+2. In VS Code, open the Command Palette (<kbd>Cmd</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd>), type `Extensions: Install from VSIX...`, and select your `.vsix` file.
+3. Reload VS Code if prompted.
+
+---
+
+## 📝 Changelog
+
+- **1.0.1**
+  - Added large, styled inline decoration for copy feedback (with border and padding)
+  - Improved keyboard shortcuts and context menu integration
+  - Enhanced hover previews for code and folders
+  - Bug fixes and polish
+
+---
 
 ## 🔑 Why This Matters
 
@@ -107,5 +161,4 @@ Stop forcing rigid "context blocks" and losing clarity. Start writing naturally�
 * Improve AI output quality.
 * Keep your workspace clean, navigable, and intuitive.
 * Create reusable, shareable, context-rich prompts for your team.
-
 
