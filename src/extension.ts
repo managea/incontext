@@ -1,3 +1,5 @@
+// Reference Management Panel registration
+import { ReferencePanelProvider } from './referencePanel';
 // Simple Code Reference Extension
 import * as vscode from 'vscode';
 
@@ -345,17 +347,46 @@ async function openFileReference(reference: string) {
   const endPosition = new vscode.Position(endLine, document.lineAt(Math.min(endLine, document.lineCount - 1)).text.length);
   const selection = new vscode.Selection(startPosition, endPosition);
   
-  // Show the document with the selection
+  // Use focusOrOpenFile to avoid duplicate editors
+  await focusOrOpenFile(fileUri, selection);
+
+  debugLog('Successfully opened or focused file:', fileUri.fsPath, 'at lines', startLine + 1, '-', endLine + 1);
+/**
+ * Checks if a file is already open in any visible editor and focuses it, otherwise opens it.
+ * @param fileUri The URI of the file to focus or open.
+ * @param selection The selection range to reveal.
+ * @returns The editor that was focused or opened.
+ */
+async function focusOrOpenFile(fileUri: vscode.Uri, selection: vscode.Selection): Promise<vscode.TextEditor> {
+  // Try to find an already open editor for this file
+  const openEditor = vscode.window.visibleTextEditors.find(
+    editor => editor.document.uri.toString() === fileUri.toString()
+  );
+  if (openEditor) {
+    // If the editor is not active, focus it in its viewColumn
+    openEditor.selection = selection;
+    openEditor.revealRange(selection, vscode.TextEditorRevealType.InCenter);
+    // Use only supported options for showTextDocument
+    await vscode.window.showTextDocument(openEditor.document, {
+      viewColumn: openEditor.viewColumn,
+      preserveFocus: false,
+      selection: selection,
+      preview: false
+    });
+    return openEditor;
+  }
+  // Otherwise, open the document as usual
+  const document = await vscode.workspace.openTextDocument(fileUri);
   const editor = await vscode.window.showTextDocument(document, {
     selection: selection,
     viewColumn: vscode.ViewColumn.Active,
     preserveFocus: false
   });
-  
-  // Reveal the range in the editor
   editor.revealRange(selection, vscode.TextEditorRevealType.InCenter);
-  
-  debugLog('Successfully opened file:', fileUri.fsPath, 'at lines', startLine + 1, '-', endLine + 1);
+  return editor;
+}
+
+// Patch openFileReference to use focusOrOpenFile
 }
 
 // This method is called when your extension is activated
@@ -682,6 +713,88 @@ export function activate(context: vscode.ExtensionContext) {
       }
     )
   );
+// Register HoverProvider for code previews on reference hover
+context.subscriptions.push(
+  vscode.languages.registerHoverProvider(
+    { scheme: 'file' },
+    {
+      async provideHover(document, position, token) {
+        const line = document.lineAt(position.line).text;
+        let match;
+        REFERENCE_PATTERN.lastIndex = 0;
+        while ((match = REFERENCE_PATTERN.exec(line)) !== null) {
+          const matchStart = match.index;
+          const matchEnd = match.index + match[0].length;
+          if (position.character >= matchStart && position.character <= matchEnd) {
+            const reference = match[0];
+            // Only handle file references (not directories)
+            if (reference.endsWith('/')) {
+              return new vscode.Hover('Directory reference');
+            }
+            // Parse reference: @project/path/to/file:Lstart:end or @project/path/to/file
+            const refMatch = reference.match(/^@(.+?)(?::L(\d+)(?::(\d+))?)?$/);
+            if (!refMatch) {return;}
+            const [, fullPath, startLineStr, endLineStr] = refMatch;
+            const workspaceFolders = vscode.workspace.workspaceFolders;
+            if (!workspaceFolders) {return;}
+            let targetWorkspaceFolder = workspaceFolders[0];
+            let fileRelativePath = fullPath;
+            const pathParts = fullPath.split('/');
+            if (pathParts.length > 1) {
+              const projectName = pathParts[0];
+              const matchingFolder = workspaceFolders.find(f => f.name === projectName);
+              if (matchingFolder) {
+                targetWorkspaceFolder = matchingFolder;
+                fileRelativePath = pathParts.slice(1).join('/');
+              }
+            }
+            const fileUri = vscode.Uri.joinPath(targetWorkspaceFolder.uri, fileRelativePath);
+            try {
+              const fileDoc = await vscode.workspace.openTextDocument(fileUri);
+              let startLine = 0;
+              let endLine = 0;
+              if (startLineStr) {
+                startLine = Math.max(0, parseInt(startLineStr, 10) - 1);
+                endLine = endLineStr ? Math.max(0, parseInt(endLineStr, 10) - 1) : startLine;
+              }
+              startLine = Math.min(startLine, fileDoc.lineCount - 1);
+              endLine = Math.min(endLine, fileDoc.lineCount - 1);
+              let code = '';
+              for (let i = startLine; i <= endLine; i++) {
+                code += fileDoc.lineAt(i).text + '\n';
+              }
+              if (!code) {
+                // If no range, show first 10 lines as preview
+                const previewLines = Math.min(10, fileDoc.lineCount);
+                for (let i = 0; i < previewLines; i++) {
+                  code += fileDoc.lineAt(i).text + '\n';
+                }
+                // Register Reference Management Panel (TreeView)
+                const referencePanelProvider = new ReferencePanelProvider(context);
+                context.subscriptions.push(
+                  vscode.window.registerTreeDataProvider('incontext.references', referencePanelProvider)
+                );
+                vscode.window.showInformationMessage('Registering ReferencePanelProvider and refreshing...');
+                referencePanelProvider.refresh();
+                context.subscriptions.push(
+                  vscode.commands.registerCommand('incontext.refreshReferences', () => referencePanelProvider.refresh())
+                );
+              }
+              const lang = fileDoc.languageId || '';
+              const md = new vscode.MarkdownString();
+              md.appendCodeblock(code.trim(), lang);
+              md.isTrusted = true;
+              return new vscode.Hover(md);
+            } catch (err) {
+              return new vscode.Hover('Unable to load code preview.');
+            }
+          }
+        }
+        return;
+      }
+    }
+  )
+);
 
 }
 

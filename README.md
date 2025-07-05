@@ -108,4 +108,13 @@ Stop forcing rigid "context blocks" and losing clarity. Start writing naturallyâ
 * Keep your workspace clean, navigable, and intuitive.
 * Create reusable, shareable, context-rich prompts for your team.
 
+---
+
+## ðŸš€ Future Roadmap & Potential Improvements
+
+- **Rich Preview:** Show code previews or diffs on hover for references.
+- **Reference Management Panel:** Provide a sidebar to view, search, and manage all references in a workspace.
+
+
+These improvements aim to make InContext even more powerful, flexible, and collaborative for all users.
 
