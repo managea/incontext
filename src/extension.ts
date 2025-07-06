@@ -8,6 +8,9 @@ let highlightedPathDecoration: vscode.TextEditorDecorationType;
 // Regex pattern for matching references - centralized to avoid duplication
 const REFERENCE_PATTERN = /@([^\s@]+(?::[^:\s]*)*\/?)/g;
 
+// Regex for parsing a single reference (with optional line numbers)
+const SINGLE_REFERENCE_REGEX = /^@(.+?)(?::L(\d+)(?::(\d+))?)?$/;
+
 /**
  * Simple logging helper - can be easily disabled for production
  */
@@ -15,6 +18,113 @@ const DEBUG = false; // Set to false to disable debug logging
 function debugLog(...args: any[]) {
   if (DEBUG) {
     console.log(...args);
+  }
+}
+
+/**
+ * Show a brief status bar message when a reference is copied.
+ */
+// Decoration type for the clipboard notification
+let clipboardDecorationType: vscode.TextEditorDecorationType | undefined;
+
+/**
+ * Show a flashy notification at the current editor selection
+ */
+function showClipboardAnimation(message: string = 'Reference copied to clipboard') {
+  const editor = vscode.window.activeTextEditor;
+  if (!editor) {
+    return;
+  }
+  
+  // The full message with checkmark
+  const fullMessage = `Reference copied to clipboard ✅`;
+  
+  // Start with empty text
+  let currentText = '';
+  let charIndex = 0;
+  
+  // Apply decoration to current selection
+  const selections = editor.selections;
+  if (selections.length > 0) {
+    // Create typing animation interval
+    const typingInterval = setInterval(() => {
+      // Add one character at a time
+      if (charIndex < fullMessage.length) {
+        currentText += fullMessage.charAt(charIndex);
+        charIndex++;
+        
+        // Update decoration with current text
+        const typingDecoration = vscode.window.createTextEditorDecorationType({
+          // No background color on the selection
+          after: {
+            contentText: `  ${currentText}  `, // Extra spaces for padding
+            color: '#4CAF50', // Green text
+            backgroundColor: 'transparent', // No background
+            margin: '0 0 0 1em',
+            border: '1px solid',
+            borderColor: '#8BC34A', // Light green border
+            fontStyle: 'normal',
+            fontWeight: 'bold',
+            textDecoration: 'none; font-size: 1.2em; padding: 0.3em 0.6em' // Make text bigger
+          }
+        });
+        
+        // Apply updated decoration
+        editor.setDecorations(typingDecoration, selections);
+        
+        // Dispose previous decoration if it exists
+        if (clipboardDecorationType) {
+          clipboardDecorationType.dispose();
+        }
+        clipboardDecorationType = typingDecoration;
+      } else {
+        // Typing finished, clear interval
+        clearInterval(typingInterval);
+        
+        // Keep the message visible for a moment before starting fade
+        setTimeout(() => {
+          // Create a simple fade out animation
+          let opacity = 1.0;
+          const fadeInterval = setInterval(() => {
+            opacity -= 0.1;
+            
+            if (opacity <= 0) {
+              // Animation complete, clean up
+              clearInterval(fadeInterval);
+              
+              if (clipboardDecorationType) {
+                editor.setDecorations(clipboardDecorationType, []);
+                clipboardDecorationType.dispose();
+                clipboardDecorationType = undefined as unknown as vscode.TextEditorDecorationType;
+              }
+            } else {
+              // Create new decoration with reduced opacity
+              const fadeDecoration = vscode.window.createTextEditorDecorationType({
+                after: {
+                  contentText: `  ${fullMessage}  `, // Extra spaces for padding
+                  color: `rgba(76, 175, 80, ${opacity})`, // Green text with opacity
+                  backgroundColor: 'transparent',
+                  margin: '0 0 0 1em',
+                  border: `1px solid rgba(139, 195, 74, ${opacity})`, // Border with opacity
+                  fontStyle: 'normal',
+                  fontWeight: 'bold',
+                  textDecoration: 'none; font-size: 1.2em; padding: 0.3em 0.6em'
+                }
+              });
+              
+              // Apply updated decoration
+              editor.setDecorations(fadeDecoration, selections);
+              
+              // Dispose previous decoration
+              if (clipboardDecorationType) {
+                clipboardDecorationType.dispose();
+              }
+              clipboardDecorationType = fadeDecoration;
+            }
+          }, 50);
+        }, 800);
+      }
+    }, 3); // Type a character every 50ms
   }
 }
 
@@ -441,7 +551,7 @@ export function activate(context: vscode.ExtensionContext) {
         
         // Copy to clipboard
         await vscode.env.clipboard.writeText(reference);
-        
+        showClipboardAnimation();
         debugLog('Reference copied to clipboard:', reference);
       } catch (error) {
         console.error('Error in copyCodeReference:', error);
@@ -517,7 +627,7 @@ export function activate(context: vscode.ExtensionContext) {
         
         // Copy to clipboard (restore the original clipboard approach)
         await vscode.env.clipboard.writeText(reference);
-        
+        showClipboardAnimation();
         debugLog('File reference copied to clipboard:', reference);
         
       } catch (error) {
@@ -614,6 +724,114 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand('incontext.openReference', async (reference: string) => {
       await openReference(reference);
+    })
+  );
+
+  // Register HoverProvider for code previews on reference hover
+  context.subscriptions.push(
+    vscode.languages.registerHoverProvider({ scheme: 'file' }, {
+      async provideHover(document: vscode.TextDocument, position: vscode.Position, token: vscode.CancellationToken): Promise<vscode.Hover | null> {
+        const lineText = document.lineAt(position.line).text;
+        let match;
+        REFERENCE_PATTERN.lastIndex = 0;
+        while ((match = REFERENCE_PATTERN.exec(lineText)) !== null) {
+          const matchStart = match.index;
+          const matchEnd = match.index + match[0].length;
+          if (position.character < matchStart || position.character > matchEnd) {
+            continue; // cursor not within this reference
+          }
+
+          const reference = match[0];
+          const isDirectoryReference = reference.endsWith('/');
+
+          // Resolve workspace folder similar to openFileReference
+          const workspaceFolders = vscode.workspace.workspaceFolders;
+          if (!workspaceFolders) {
+            return null;
+          }
+          let targetWorkspaceFolder = workspaceFolders[0];
+          let fileRelativePath = '';
+
+          if (isDirectoryReference) {
+            // Remove leading @ and trailing /
+            fileRelativePath = reference.substring(1, reference.length - 1);
+          } else {
+            // Parse reference for file path & lines
+            const parsed = reference.match(SINGLE_REFERENCE_REGEX);
+            if (!parsed) {
+              return null;
+            }
+            const [, fullPath, startLineStr, endLineStr] = parsed;
+            fileRelativePath = fullPath;
+
+            // The workspace resolution logic will continue below after determining project folder
+            // Store for later
+            (global as any)._refLineInfo = { startLineStr, endLineStr };
+          }
+
+          const pathParts = fileRelativePath.split('/');
+          if (pathParts.length > 1) {
+            const potentialProject = pathParts[0];
+            const matchingFolder = workspaceFolders.find(f => f.name === potentialProject);
+            if (matchingFolder) {
+              targetWorkspaceFolder = matchingFolder;
+              fileRelativePath = pathParts.slice(1).join('/');
+            }
+          }
+
+          const targetUri = vscode.Uri.joinPath(targetWorkspaceFolder.uri, fileRelativePath);
+
+          if (isDirectoryReference) {
+            try {
+              const entries = await vscode.workspace.fs.readDirectory(targetUri);
+              const markdown = new vscode.MarkdownString();
+              markdown.appendMarkdown(`**Folder contents of 
+${fileRelativePath}/**\n\n`);
+              const maxEntries = 20;
+              entries.slice(0, maxEntries).forEach(([name, type]) => {
+                const icon = type === vscode.FileType.Directory ? '📁' : '📄';
+                markdown.appendMarkdown(`- ${icon} ${name}\n`);
+              });
+              if (entries.length > maxEntries) {
+                markdown.appendMarkdown(`\n...and ${entries.length - maxEntries} more`);
+              }
+              markdown.isTrusted = false;
+              return new vscode.Hover(markdown, new vscode.Range(position.line, matchStart, position.line, matchEnd));
+            } catch (dirErr) {
+              console.error('HoverProvider dir error', dirErr);
+              return null;
+            }
+          }
+
+          // File reference handling below (non-directory)
+          const { startLineStr, endLineStr } = (global as any)._refLineInfo || {};
+          const fileUri = targetUri;
+
+          try {
+            const doc = await vscode.workspace.openTextDocument(fileUri);
+            let startLine = 0;
+            let endLine = Math.min(29, doc.lineCount - 1); // default: first 30 lines
+            if (startLineStr) {
+              startLine = Math.max(0, parseInt(startLineStr, 10) - 1);
+              endLine = endLineStr ? Math.max(0, parseInt(endLineStr, 10) - 1) : startLine + 9; // show 10 lines by default
+              endLine = Math.min(endLine, doc.lineCount - 1);
+            }
+            const lines: string[] = [];
+            for (let i = startLine; i <= endLine; i++) {
+              lines.push(doc.lineAt(i).text);
+            }
+            const codeFenceLang = fileRelativePath.split('.').pop() || 'plaintext';
+            const markdown = new vscode.MarkdownString();
+            markdown.appendCodeblock(lines.join('\n'), codeFenceLang);
+            markdown.isTrusted = false;
+            return new vscode.Hover(markdown, new vscode.Range(position.line, matchStart, position.line, matchEnd));
+          } catch (err) {
+            console.error('HoverProvider error reading file', err);
+            return null;
+          }
+        }
+        return null;
+      }
     })
   );
 
