@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "incontext": {
+      "command": "node",
+      "args": ["/Users/managea/dev/ai/incontext/mcp-server.js"],
+      "env": {
+        "NODE_ENV": "production"
+      }
+    }
+  }
+}

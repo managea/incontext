@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "incontext": {
+      "command": "node",
+      "args": ["/Users/managea/dev/ai/incontext/bin/mcp-server-standalone.js"],
+      "env": {
+        "INCONTEXT_WORKSPACE_ROOT": "/Users/managea/dev/ai/incontext"
+      }
+    }
+  }
+}
