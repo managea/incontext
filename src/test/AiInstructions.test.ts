@@ -52,6 +52,7 @@ suite('AiInstructions', () => {
     assert.ok(text.includes('(http://localhost:47001/open#@<folder>/<path>:L<start>:<end>)'));
     assert.ok(text.includes('(vscode-insiders://managea.incontext/@<folder>/<path>:L<start>:<end>)'));
     assert.ok(text.includes('the Claude desktop app, the ChatGPT/Codex app or the GitHub Copilot app'));
+    assert.ok(text.includes('In a file you create or edit (Markdown, code comments)') && text.includes('never inside a Markdown link'));
   });
 
   test('the README shows the template, with the default port', () => {

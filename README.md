@@ -61,13 +61,13 @@
 
 - Links of the form `vscode://managea.incontext/@project/src/file.ts:L10:20` (or `#L10-L20`) open a reference from anywhere VS Code opens links, including GitHub Copilot Chat replies and AI tools in the terminal. This short form needs incontext 1.2.0 or later.
 - The Claude desktop app, the ChatGPT/Codex app and the GitHub Copilot app don't open `vscode://` links, so the instruction below has AI tools link to incontext's link server instead, unless they know their reply is shown inside VS Code or in a terminal (see [Desktop chat apps](#desktop-chat-apps-claude-chatgptcodex-and-github-copilot)).
-- The instruction below tells an AI tool which link to write. One instruction serves every tool, and [one command](#use-one-instruction-in-every-ai-tool) installs it in all of them:
+- The instruction below tells an AI tool which link to write in a reply, and to write the plain reference in the files it edits. One instruction serves every tool, and [one command](#use-one-instruction-in-every-ai-tool) installs it in all of them:
 
   <!-- ai-instructions:start (generated from media/ai-instructions.md by npm run sync-readme) -->
   ```markdown
   ## Code references
 
-  When you cite code from a workspace file, write it as a Markdown link whose label is the incontext reference itself (such as @incontext/src/extension.ts:L36:68) and whose target is an incontext link, so a click opens it in VS Code with the lines selected. Put other words, such as the symbol's name, outside the link. For workspace code, this takes precedence over other instructions about how to link to files.
+  When you cite code from a workspace file in a reply, write it as a Markdown link whose label is the incontext reference itself (such as @incontext/src/extension.ts:L36:68) and whose target is an incontext link, so a click opens it in VS Code with the lines selected. Put other words, such as the symbol's name, outside the link. For workspace code, this takes precedence over other instructions about how to link to files.
 
   If your reply is shown in a desktop app, such as the Claude desktop app, the ChatGPT/Codex app or the GitHub Copilot app, or you aren't sure where it is shown, use this target. It works wherever VS Code is running:
 
@@ -77,11 +77,13 @@
 
   [@<folder>/<path>:L<start>:<end>](vscode://managea.incontext/@<folder>/<path>:L<start>:<end>)
 
-  - <folder> is the name of the VS Code workspace folder that contains the file (usually the repository's root folder), and <path> is the file's path relative to it, with forward slashes. Percent-encode spaces in the link target as %20.
-  - Use :L<line> for a single line, leave out the line part to link a whole file, and end the path with / to link a folder.
-  - Don't put the link in backticks or a code block, and only cite lines you have read.
+  In a file you create or edit (Markdown, code comments), refer to code and to other workspace files with the reference itself as plain text, never inside a Markdown link, such as @incontext/src/extension.ts:L36:68. The incontext extension makes it clickable in VS Code. When an edit moves the lines a reference points to, update its numbers.
 
-  Example: openReference is at [@incontext/src/extension.ts:L36:68](http://localhost:46266/open#@incontext/src/extension.ts:L36:68), or inside VS Code or a terminal [@incontext/src/extension.ts:L36:68](vscode://managea.incontext/@incontext/src/extension.ts:L36:68).
+  - <folder> is the name of the VS Code workspace folder that contains the file (usually the repository's root folder), and <path> is the file's path relative to it, with forward slashes. Percent-encode spaces as %20.
+  - Use :L<line> for a single line, leave out the line part to refer to a whole file, and end the path with / to refer to a folder.
+  - Don't put a reference or link in backticks or a code block, and only cite lines you have read.
+
+  Example in a reply: openReference is at [@incontext/src/extension.ts:L36:68](http://localhost:46266/open#@incontext/src/extension.ts:L36:68), or inside VS Code or a terminal [@incontext/src/extension.ts:L36:68](vscode://managea.incontext/@incontext/src/extension.ts:L36:68).
   ```
   <!-- ai-instructions:end -->
 
@@ -125,6 +127,9 @@ Run **InContext: Set Up AI Assistant Instructions** from the Command Palette. It
 ---
 
 ## 📝 Changelog
+
+- **1.3.1**
+  - The AI assistant instruction covers files too: in Markdown files and code comments, AI tools write the plain reference, which incontext makes clickable, instead of a Markdown link, and keep its line numbers up to date. Run **InContext: Set Up AI Assistant Instructions** again to update what it wrote
 
 - **1.3.0**
   - Links to `http://localhost:46266/open#@project/src/file.ts:L10:20` open references in VS Code from the Claude desktop app, the ChatGPT/Codex app and the GitHub Copilot app (tested on macOS). Settings: `incontext.linkServer.enabled` and `incontext.linkServer.port`
