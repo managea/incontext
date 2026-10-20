@@ -52,8 +52,9 @@ export interface OpenRequest {
  */
 export class MarkdownPreview {
   static readonly OPEN_PATH = '/open';
-  // A bare reference must start a word, so e-mail addresses and the like stay text
-  private static readonly REFERENCE_BOUNDARY = /[\s([{<>"'`*_~]/;
+  // A bare reference can't follow a character that belongs to an e-mail address or URL (me@host/..., site.com/@user),
+  // so those stay text; any other character, such as a space or ':', can come before it
+  private static readonly NOT_BEFORE_REFERENCE = /[A-Za-z0-9.%+\-\/\\]/;
 
   static extendMarkdownIt(md: MarkdownIt, extensionId: string): MarkdownIt {
     md.inline.ruler.push('incontext_reference', MarkdownPreview.bareReferenceRule);
@@ -155,7 +156,7 @@ export class MarkdownPreview {
     if (state.src.charCodeAt(start) !== 0x40 /* @ */ || (state.linkLevel ?? 0) > 0) {
       return false;
     }
-    if (start > 0 && !MarkdownPreview.REFERENCE_BOUNDARY.test(state.src[start - 1])) {
+    if (start > 0 && MarkdownPreview.NOT_BEFORE_REFERENCE.test(state.src[start - 1])) {
       return false;
     }
     const match = /^@[^\s@]+/.exec(state.src.slice(start, state.posMax));
