@@ -7,6 +7,7 @@
 # incontext-publisher (resource group incontext-publishing) through a federated credential that trusts
 # this repository's "marketplace" environment, and vsce publishes as that identity.
 # Open VSX uses the OVSX_PAT secret when set, otherwise ovsx trusted publishing.
+# Both publish steps skip a version the registry already has, so a failed release can simply be re-run.
 #
 # One-time setup: run this workflow manually with "lookup-identity" ticked to print the identity's ID,
 # then add that ID as a Contributor member of the managea publisher on the Marketplace.
@@ -67,10 +68,10 @@ jobs:
 
       - name: Publish to the Visual Studio Marketplace
         if: ${{ !inputs.lookup-identity }}
-        run: npx --yes @vscode/vsce@4.0.0 publish --azure-credential --packagePath incontext.vsix
+        run: npx --yes @vscode/vsce@4.0.0 publish --azure-credential --skip-duplicate --packagePath incontext.vsix
 
       - name: Publish to Open VSX
         if: ${{ !inputs.lookup-identity }}
-        run: npx --yes ovsx@1.3.0 publish --packagePath incontext.vsix
+        run: npx --yes ovsx@1.3.0 publish --skip-duplicate --packagePath incontext.vsix
         env:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
