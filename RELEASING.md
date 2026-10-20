@@ -3,7 +3,7 @@
 Releases are published by GitHub Actions ([`.github/workflows/publish.yml`](.github/workflows/publish.yml)) when a `v*` tag is pushed. The workflow publishes to:
 
 - **Visual Studio Marketplace** (VS Code), signed in as an Azure managed identity. No token is stored anywhere, so nothing expires.
-- **Open VSX** (Cursor and other VS Code forks), with trusted publishing. No token is stored here either. This starts working once the `managea` namespace claim is approved and the trusted publisher is registered (see the table below).
+- **Open VSX** (Cursor and other VS Code forks), with trusted publishing. No token is stored here either. This step is off until the `managea` namespace claim is approved and the trusted publisher is registered; then turn it on by setting `OPEN_VSX_ENABLED` to `true` (see the table below).
 
 ## Release a new version
 
@@ -53,10 +53,10 @@ Then run **Developer: Reload Window** in VS Code. A `.vsix` install doesn't auto
 | Managed identity `incontext-publisher` | Azure, resource group `incontext-publishing` | The account the workflow publishes as. It has **Reader** on its resource group. |
 | Federated credential `github-incontext-marketplace` | On the managed identity | Trusts GitHub Actions jobs from this repo's `marketplace` environment, using GitHub's immutable subject (`repo:managea@<id>/incontext@<id>:environment:marketplace`). |
 | Immutable subject claim | This repo: **Settings → Actions → OIDC** | Must stay **on**, or GitHub's sign-in no longer matches the federated credential. |
-| GitHub environment `marketplace` | This repo: **Settings → Environments** | Holds the variables `AZURE_CLIENT_ID`, `AZURE_TENANT_ID` and `AZURE_SUBSCRIPTION_ID`. Only `main` and `v*` tags can use it. |
+| GitHub environment `marketplace` | This repo: **Settings → Environments** | Holds the variables `AZURE_CLIENT_ID`, `AZURE_TENANT_ID` and `AZURE_SUBSCRIPTION_ID`, plus `OPEN_VSX_ENABLED` (set it to `true` to publish to Open VSX). Only `main` and `v*` tags can use it. |
 | Azure DevOps user | Organization `atmica` (connected to the Azure directory) | The identity is added as a **Stakeholder**, which gives it the profile the Marketplace needs. |
 | Publisher member | Marketplace publisher `managea` → **Members** | The identity is a **Contributor**, so it can publish updates. |
-| Trusted publisher | Open VSX namespace `managea` → **Trusted Publishers** | Trusts this repo's `publish.yml` workflow and `marketplace` environment. **Not set up yet:** it can be registered once the namespace claim ([#14455](https://github.com/EclipseFdn/open-vsx.org/issues/14455)) is approved. The workflow uses an `OVSX_PAT` secret instead, if one is set. |
+| Trusted publisher | Open VSX namespace `managea` → **Trusted Publishers** | Trusts this repo's `publish.yml` workflow and `marketplace` environment. **Not set up yet:** it can be registered once the namespace claim ([#14455](https://github.com/EclipseFdn/open-vsx.org/issues/14455)) is approved. Then set `OPEN_VSX_ENABLED` to `true` and re-run the latest release to publish what Open VSX is missing. The workflow uses an `OVSX_PAT` secret instead, if one is set. |
 
 To print the identity's Marketplace ID (needed to re-add it to the publisher), run the **Publish** workflow manually with **lookup-identity** ticked. That mode publishes nothing.
 
