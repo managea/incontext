@@ -137,6 +137,25 @@ async function openFileReference(fileUri: vscode.Uri, parsed: ParsedReference, v
   return editor;
 }
 
+/**
+ * Open a reference clicked outside the editor (the Markdown preview, chat, the terminal) in a split beside it,
+ * instead of covering what was clicked. New-split clicks (Cmd/Ctrl+click in the preview) add another split.
+ */
+async function openInSplit(reference: string, from?: string, newSplit = false) {
+  const editor = await openReference(reference, from, PreviewSplit.column(from ? vscode.Uri.parse(from) : undefined, newSplit));
+  if (editor && !newSplit) {
+    PreviewSplit.remember(editor.viewColumn);
+  }
+}
+
+class TerminalReferenceLink extends vscode.TerminalLink {
+  constructor(start: number, readonly reference: string) {
+    const parsed = ReferenceParser.parse(reference);
+    const lines = parsed ? ReferenceParser.describeLines(parsed) : '';
+    super(start, reference.length, `Open ${parsed?.path ?? reference}${lines ? ` (${lines})` : ''}`);
+  }
+}
+
 // This method is called when your extension is activated
 export function activate(context: vscode.ExtensionContext) {
   // Inline decoration type for 'Reference copied!'
@@ -354,24 +373,27 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.window.registerUriHandler({
       async handleUri(uri: vscode.Uri) {
-        if (uri.path !== MarkdownPreview.OPEN_PATH) {
-          return;
-        }
         const request = MarkdownPreview.parseOpenUri(uri);
         if (!request) {
           vscode.window.showErrorMessage(`Invalid reference link: ${uri.toString(true)}`);
           return;
         }
-        // Open in a split beside the preview instead of covering it; Cmd/Ctrl+click asks for a new split
-        const newSplit = request.split === 'new';
-        const from = request.from ? vscode.Uri.parse(request.from) : undefined;
-        const editor = await openReference(request.reference, request.from, PreviewSplit.column(from, newSplit));
-        if (editor && !newSplit) {
-          PreviewSplit.remember(editor.viewColumn);
-        }
+        await openInSplit(request.reference, request.from, request.split === 'new');
       }
     })
   );
+
+  // Make @project/path:L34:43 references printed in the integrated terminal (Copilot CLI, scripts, ...) clickable
+  const terminalLinks: vscode.TerminalLinkProvider<TerminalReferenceLink> = {
+    provideTerminalLinks(context: vscode.TerminalLinkContext): TerminalReferenceLink[] {
+      return ReferenceParser.findStandaloneReferences(context.line)
+        .map(({ reference, start }) => new TerminalReferenceLink(start, reference));
+    },
+    async handleTerminalLink(link: TerminalReferenceLink) {
+      await openInSplit(link.reference);
+    }
+  };
+  context.subscriptions.push(vscode.window.registerTerminalLinkProvider(terminalLinks));
 
   // Picked up by the built-in Markdown preview through the markdown.markdownItPlugins contribution
   return {

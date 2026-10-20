@@ -47,14 +47,13 @@ export interface OpenRequest {
  *
  * The preview webview does not run `command:` links, so each reference link points at
  * `vscode://<extension id>/open?<json>`, which VS Code routes to this extension's URI handler.
+ * The handler also takes the short form `vscode://<extension id>/@project/path/file.ts:L34:43`,
+ * which Copilot and other tools can write by hand.
  * Each link is wrapped in `.incontext-reference` with a hover peek of the referenced code
  * (styled and positioned by media/markdown-preview.css and .js).
  */
 export class MarkdownPreview {
   static readonly OPEN_PATH = '/open';
-  // A bare reference can't follow a character that belongs to an e-mail address or URL (me@host/..., site.com/@user),
-  // so those stay text; any other character, such as a space or ':', can come before it
-  private static readonly NOT_BEFORE_REFERENCE = /[A-Za-z0-9.%+\-\/\\]/;
 
   static extendMarkdownIt(md: MarkdownIt, extensionId: string): MarkdownIt {
     md.inline.ruler.push('incontext_reference', MarkdownPreview.bareReferenceRule);
@@ -132,6 +131,11 @@ export class MarkdownPreview {
   }
 
   static parseOpenUri(uri: vscode.Uri): OpenRequest | undefined {
+    if (uri.path !== MarkdownPreview.OPEN_PATH) {
+      // Short form: the reference is the path, and a #L34-L43 suffix arrives as the fragment
+      const reference = uri.path.replace(/^\/+/, '') + (uri.fragment ? `#${uri.fragment}` : '');
+      return reference ? { reference: reference.startsWith('@') ? reference : `@${reference}` } : undefined;
+    }
     // VS Code hands the query over decoded; decode again in case a caller encoded it twice
     for (const query of [uri.query, MarkdownPreview.safeDecode(uri.query)]) {
       try {
@@ -156,7 +160,7 @@ export class MarkdownPreview {
     if (state.src.charCodeAt(start) !== 0x40 /* @ */ || (state.linkLevel ?? 0) > 0) {
       return false;
     }
-    if (start > 0 && MarkdownPreview.NOT_BEFORE_REFERENCE.test(state.src[start - 1])) {
+    if (!ReferenceParser.isReferenceStart(state.src, start)) {
       return false;
     }
     const match = /^@[^\s@]+/.exec(state.src.slice(start, state.posMax));

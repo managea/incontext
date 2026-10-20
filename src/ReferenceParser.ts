@@ -26,6 +26,9 @@ export class ReferenceParser {
   private static readonly LINE_SUFFIX_PATTERN = /^(.+?)(?:([:#])L(\d+)(?:,\d+)?(?:[:-]L?(\d+)(?:,\d+)?)?)?$/;
   private static readonly TRAILING_PUNCTUATION = /[.,;:!?'"`*~)\]}>]$/;
   private static readonly SCHEME_PATTERN = /^[a-z][a-z0-9+.-]*:/i;
+  // In free text a reference can't follow a character that belongs to an e-mail address or URL
+  // (me@host/..., site.com/@user, a shell prompt's user@host:~/dir), so those stay text
+  private static readonly NOT_BEFORE_REFERENCE = /[A-Za-z0-9.%+\-\/\\]/;
 
   /** Finds `@` references in a line of text, without trailing punctuation such as the `)` of a markdown link. */
   static findReferences(text: string): ReferenceMatch[] {
@@ -39,6 +42,20 @@ export class ReferenceParser {
       }
     }
     return matches;
+  }
+
+  /** Whether a reference in free text can start at `index`: an `@` that isn't part of an e-mail address or URL. */
+  static isReferenceStart(text: string, index: number): boolean {
+    return text[index] === '@' && (index === 0 || !ReferenceParser.NOT_BEFORE_REFERENCE.test(text[index - 1]));
+  }
+
+  /**
+   * References in free text such as terminal output, where any `@word` can appear: each must start a word
+   * and contain a path, so `@mentions`, e-mail addresses and shell prompts stay text.
+   */
+  static findStandaloneReferences(text: string): ReferenceMatch[] {
+    return ReferenceParser.findReferences(text)
+      .filter(match => match.reference.includes('/') && ReferenceParser.isReferenceStart(text, match.start));
   }
 
   static trimReference(candidate: string): string {

@@ -16,6 +16,7 @@
 - **Explorer & Editor Integration:** Copy references from the editor or the file/folder context menu in the Explorer.
 - **Hover Previews:** Hover over a reference to preview code or see folder contents.
 - **Clickable in Markdown Preview:** References in your markdown become links in VS Code's Markdown preview — no changes to the markdown needed.
+- **Clickable in the terminal and in Copilot replies:** References printed in VS Code's terminal open with a click, and GitHub Copilot can be told to cite code as references that open the same way.
 - **Keyboard Shortcuts:** Use <kbd>Cmd</kbd>+<kbd>'</kbd> to copy references quickly.
 - **No intrusive popups:** All feedback is inline and non-blocking.
 
@@ -50,6 +51,29 @@
 - Plain relative markdown links get line ranges too: `[the parser](../src/file.ts#L10-L20)`.
 - The first click may ask *Allow 'Code Reference Extension' extension to open this URI?* — tick **Do not ask me again**.
 
+### Terminal
+
+- References printed in VS Code's integrated terminal — by GitHub Copilot CLI, Claude Code, scripts or anything else — are clickable. <kbd>Cmd</kbd>+click (<kbd>Ctrl</kbd>+click on Windows/Linux) opens the file with the lines selected, in a split beside the editor.
+
+### GitHub Copilot
+
+- Links of the form `vscode://managea.incontext/@project/src/file.ts:L10:20` (or `#L10-L20`) open a reference from anywhere VS Code opens links, including GitHub Copilot Chat replies and Copilot CLI in the terminal.
+- To have Copilot cite code this way, add the instruction below to `~/.copilot/copilot-instructions.md` (your personal instructions, used in every repository by Copilot in VS Code and by Copilot CLI), or to a repository's `.github/copilot-instructions.md` or `AGENTS.md`:
+
+  ```markdown
+  ## Code references
+
+  When you cite code from a workspace file, write it as a Markdown link whose label is the incontext reference and whose target is the matching incontext link, so it opens in VS Code with the lines selected:
+
+  [@<folder>/<path>:L<start>:<end>](vscode://managea.incontext/@<folder>/<path>:L<start>:<end>)
+
+  - <folder> is the name of the workspace folder (or repository root folder) that contains the file, and <path> is the file's path relative to it, with forward slashes. Percent-encode spaces in the link target as %20.
+  - Use :L<line> for a single line, leave out the line part to link a whole file, and end the path with / to link a folder.
+  - Don't put the link in backticks or a code block, and only cite lines you have read.
+
+  Example: [@incontext/src/ReferenceDecoration.ts:L34:43](vscode://managea.incontext/@incontext/src/ReferenceDecoration.ts:L34:43)
+  ```
+
 ---
 
 ## 📦 Installation
@@ -61,6 +85,11 @@
 ---
 
 ## 📝 Changelog
+
+- **Unreleased**
+  - References printed in VS Code's integrated terminal (Copilot CLI, Claude Code, scripts) are clickable
+  - Short links, `vscode://managea.incontext/@project/src/file.ts:L10:20`, open references from GitHub Copilot Chat, Copilot CLI and anywhere else VS Code opens links; the README has a Copilot instruction for citing code this way
+  - In the Markdown preview, references right after `:` and other punctuation are links too
 
 - **1.1.0**
   - References are clickable in the Markdown preview — bare (`@project/src/file.ts:L10:20`), in inline code, or as `[label](@project/src/file.ts#L10-L20)` — with no changes to your markdown
