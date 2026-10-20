@@ -86,7 +86,7 @@
 
 ## 📝 Changelog
 
-- **Unreleased**
+- **1.2.0**
   - References printed in VS Code's integrated terminal (Copilot CLI, Claude Code, scripts) are clickable
   - Short links, `vscode://managea.incontext/@project/src/file.ts:L10:20`, open references from GitHub Copilot Chat, Copilot CLI and anywhere else VS Code opens links; the README has a Copilot instruction for citing code this way
   - In the Markdown preview, references right after `:` and other punctuation are links too
