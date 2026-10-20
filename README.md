@@ -16,7 +16,9 @@
 - **Explorer & Editor Integration:** Copy references from the editor or the file/folder context menu in the Explorer.
 - **Hover Previews:** Hover over a reference to preview code or see folder contents.
 - **Clickable in Markdown Preview:** References in your markdown become links in VS Code's Markdown preview — no changes to the markdown needed.
-- **Clickable in the terminal and in Copilot replies:** References printed in VS Code's terminal open with a click, and GitHub Copilot can be told to cite code as references that open the same way.
+- **Clickable in the terminal and in AI replies:** References printed in VS Code's terminal open with a click, and GitHub Copilot and Claude Code can be told to cite code as references that open the same way.
+- **Clickable in desktop chat apps:** In the Claude, ChatGPT/Codex and GitHub Copilot apps, AI replies can cite code as links that open in VS Code with the lines selected.
+- **One instruction for every AI tool:** A command installs the instruction that makes Claude Code, GitHub Copilot and Codex cite code this way.
 - **Keyboard Shortcuts:** Use <kbd>Cmd</kbd>+<kbd>'</kbd> to copy references quickly.
 - **No intrusive popups:** All feedback is inline and non-blocking.
 
@@ -53,26 +55,64 @@
 
 ### Terminal
 
-- References printed in VS Code's integrated terminal — by GitHub Copilot CLI, Claude Code, scripts or anything else — are clickable. <kbd>Cmd</kbd>+click (<kbd>Ctrl</kbd>+click on Windows/Linux) opens the file with the lines selected, in a split beside the editor.
+- References printed in VS Code's integrated terminal — by GitHub Copilot CLI, Claude Code, scripts or anything else — are clickable. <kbd>Cmd</kbd>+click (<kbd>Ctrl</kbd>+click on Windows/Linux) opens the file with the lines selected, in the editor.
 
-### GitHub Copilot
+### Citing code from AI assistants
 
-- Links of the form `vscode://managea.incontext/@project/src/file.ts:L10:20` (or `#L10-L20`) open a reference from anywhere VS Code opens links, including GitHub Copilot Chat replies and Copilot CLI in the terminal.
-- To have Copilot cite code this way, add the instruction below to `~/.copilot/copilot-instructions.md` (your personal instructions, used in every repository by Copilot in VS Code and by Copilot CLI), or to a repository's `.github/copilot-instructions.md` or `AGENTS.md`:
+- Links of the form `vscode://managea.incontext/@project/src/file.ts:L10:20` (or `#L10-L20`) open a reference from anywhere VS Code opens links, including GitHub Copilot Chat replies and AI tools in the terminal. This short form needs incontext 1.2.0 or later.
+- The Claude desktop app, the ChatGPT/Codex app and the GitHub Copilot app don't open `vscode://` links, so the instruction below has AI tools link to incontext's link server instead, unless they know their reply is shown inside VS Code or in a terminal (see [Desktop chat apps](#desktop-chat-apps-claude-chatgptcodex-and-github-copilot)).
+- The instruction below tells an AI tool which link to write. One instruction serves every tool, and [one command](#use-one-instruction-in-every-ai-tool) installs it in all of them:
 
+  <!-- ai-instructions:start (generated from media/ai-instructions.md by npm run sync-readme) -->
   ```markdown
   ## Code references
 
-  When you cite code from a workspace file, write it as a Markdown link whose label is the incontext reference and whose target is the matching incontext link, so it opens in VS Code with the lines selected:
+  When you cite code from a workspace file, write it as a Markdown link whose label is the incontext reference itself (such as @incontext/src/extension.ts:L36:68) and whose target is an incontext link, so a click opens it in VS Code with the lines selected. Put other words, such as the symbol's name, outside the link. For workspace code, this takes precedence over other instructions about how to link to files.
+
+  If your reply is shown in a desktop app, such as the Claude desktop app, the ChatGPT/Codex app or the GitHub Copilot app, or you aren't sure where it is shown, use this target. It works wherever VS Code is running:
+
+  [@<folder>/<path>:L<start>:<end>](http://localhost:46266/open#@<folder>/<path>:L<start>:<end>)
+
+  Only when you know your reply is shown inside VS Code or in a terminal (such as Claude Code, GitHub Copilot CLI or Codex CLI running in a terminal), use this target instead, which opens VS Code directly:
 
   [@<folder>/<path>:L<start>:<end>](vscode://managea.incontext/@<folder>/<path>:L<start>:<end>)
 
-  - <folder> is the name of the workspace folder (or repository root folder) that contains the file, and <path> is the file's path relative to it, with forward slashes. Percent-encode spaces in the link target as %20.
+  - <folder> is the name of the VS Code workspace folder that contains the file (usually the repository's root folder), and <path> is the file's path relative to it, with forward slashes. Percent-encode spaces in the link target as %20.
   - Use :L<line> for a single line, leave out the line part to link a whole file, and end the path with / to link a folder.
   - Don't put the link in backticks or a code block, and only cite lines you have read.
 
-  Example: [@incontext/src/ReferenceDecoration.ts:L34:43](vscode://managea.incontext/@incontext/src/ReferenceDecoration.ts:L34:43)
+  Example: openReference is at [@incontext/src/extension.ts:L36:68](http://localhost:46266/open#@incontext/src/extension.ts:L36:68), or inside VS Code or a terminal [@incontext/src/extension.ts:L36:68](vscode://managea.incontext/@incontext/src/extension.ts:L36:68).
   ```
+  <!-- ai-instructions:end -->
+
+### Use one instruction in every AI tool
+
+Run **InContext: Set Up AI Assistant Instructions** from the Command Palette. It shows the files below, lets you pick the tools, and writes the instruction with your link server's port. Nothing else in those folders changes.
+
+| Tool | What the command writes | Where the tool reads your instructions |
+| --- | --- | --- |
+| Claude Code (CLI, IDE and Claude desktop app) | `~/.claude/rules/incontext-references.md`, a file of its own | `~/.claude/CLAUDE.md` and `~/.claude/rules/*.md` ([docs](https://code.claude.com/docs/en/memory)) |
+| GitHub Copilot (VS Code, Copilot CLI and the GitHub Copilot app) | `~/.copilot/instructions/incontext-references.instructions.md`, a file of its own with `applyTo: "**"` | `~/.copilot/copilot-instructions.md` and `~/.copilot/instructions/**/*.instructions.md` ([CLI docs](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-custom-instructions), [VS Code docs](https://code.visualstudio.com/docs/copilot/customization/custom-instructions)) |
+| Codex (CLI and ChatGPT/Codex app) | a marked block in `~/.codex/AGENTS.md` (in `$CODEX_HOME` when that is set, and in `AGENTS.override.md` when you have one); the rest of the file stays as it is | that one file, which can't include others ([docs](https://learn.chatgpt.com/docs/agent-configuration/agents-md.md)) |
+
+- Run the command again after updating incontext to update the instruction. When you change `incontext.linkServer.port`, incontext offers to update what it wrote. When a symlink leads one of these files elsewhere, the command says where and asks first.
+- **InContext: Remove AI Assistant Instructions** deletes incontext's two files and its block in `AGENTS.md`.
+- To do it by hand instead, keep the instruction in one file of your own and symlink it into `~/.claude/rules/` and `~/.copilot/instructions/` (start the file with `applyTo: "**"` front matter, which Copilot in VS Code needs), and paste it into Codex's `AGENTS.md`. Don't symlink to `media/ai-instructions.md` in the installed extension's folder: that folder changes with every update, and its copy has placeholders where your port goes.
+- For a single repository, put the instruction in its `AGENTS.md`, which all of these tools read (Claude Code only when the repository has no `CLAUDE.md`).
+
+### Desktop chat apps: Claude, ChatGPT/Codex and GitHub Copilot
+
+- These apps don't open `vscode://` links, but they do open `http://localhost` links. So the extension runs a small link server on your machine, and a link such as `http://localhost:46266/open#@incontext/src/extension.ts:L392:394` opens that reference in VS Code's editor with the lines selected (or a whole file, or reveals a folder in the Explorer). VS Code doesn't come to the front, so you stay in the app.
+- Good to know:
+  - Tested on macOS, with the Claude, ChatGPT/Codex and GitHub Copilot apps. Windows and Linux should work too, but haven't been tried yet.
+  - VS Code must be running with the reference's folder open. Without VS Code, the click shows a page saying it can't connect.
+  - In the Claude app, use a plain click. <kbd>Cmd</kbd>+click opens the link in your default browser instead, which comes to the front; its tab closes itself once VS Code has the reference.
+  - In the ChatGPT/Codex app, the link opens in the app's browser, and that page closes itself once VS Code has the reference.
+  - In the GitHub Copilot app, the link opens in the app's own browser.
+  - Links open files inside your workspace folders only. The server listens on 127.0.0.1 only and never sends file contents back. Any web page could link to it too, but the most such a link can do is open a file of your workspace in VS Code.
+  - With several VS Code windows open, the first window to start answers the links and passes each one on to the window that has the reference's folder (the most recently focused one if several have it). When that window closes, another one takes over within a few seconds. The **InContext** channel in the Output panel shows what the link server is doing.
+  - The port is 46266 unless you change the `incontext.linkServer.port` setting; incontext then offers to update the AI assistant instructions it wrote. Turn the server off with `incontext.linkServer.enabled`.
+  - Remote windows (SSH, containers, WSL) don't run the link server.
 
 ---
 
@@ -85,6 +125,12 @@
 ---
 
 ## 📝 Changelog
+
+- **Unreleased**
+  - Links to `http://localhost:46266/open#@project/src/file.ts:L10:20` open references in VS Code from the Claude desktop app, the ChatGPT/Codex app and the GitHub Copilot app (tested on macOS). Settings: `incontext.linkServer.enabled` and `incontext.linkServer.port`
+  - **InContext: Set Up AI Assistant Instructions** writes one citation instruction into Claude Code, GitHub Copilot and Codex, with the link server's port, and **InContext: Remove AI Assistant Instructions** takes it out again. The README shows the same instruction
+  - References from AI replies (desktop apps, the terminal, `vscode://` links such as Copilot Chat's) open in the editor like any other file, instead of in a split; Markdown preview links still open beside the preview
+  - Security: a `vscode://managea.incontext` link that the Markdown preview didn't render (such as one on a web page) only opens files inside your workspace folders, `..` and symlinks included, and may only name a document that is open to resolve relative paths from. Links in the Markdown preview still open files outside the workspace, such as a sibling repository
 
 - **1.2.0**
   - References printed in VS Code's integrated terminal (Copilot CLI, Claude Code, scripts) are clickable

@@ -1,3 +1,4 @@
+import * as crypto from 'crypto';
 import * as vscode from 'vscode';
 import { MarkdownPeek } from './MarkdownPeek';
 import { ReferenceParser, ParsedReference } from './ReferenceParser';
@@ -42,6 +43,11 @@ export interface OpenRequest {
   split?: 'new';
 }
 
+export interface ParsedOpenRequest extends OpenRequest {
+  /** Whether this window's Markdown preview rendered the link (it carries the preview's signature). */
+  signed: boolean;
+}
+
 /**
  * Makes references clickable in the built-in Markdown preview.
  *
@@ -49,11 +55,14 @@ export interface OpenRequest {
  * `vscode://<extension id>/open?<json>`, which VS Code routes to this extension's URI handler.
  * The handler also takes the short form `vscode://<extension id>/@project/path/file.ts:L34:43`,
  * which Copilot and other tools can write by hand.
+ * Any app or web page can open a vscode:// link, so the preview signs its links with a key that lives only in this
+ * extension host. Only signed links may open files outside the workspace folders, such as a sibling repository.
  * Each link is wrapped in `.incontext-reference` with a hover peek of the referenced code
  * (styled and positioned by media/markdown-preview.css and .js).
  */
 export class MarkdownPreview {
   static readonly OPEN_PATH = '/open';
+  private static readonly signingKey = crypto.randomBytes(32);
 
   static extendMarkdownIt(md: MarkdownIt, extensionId: string): MarkdownIt {
     md.inline.ruler.push('incontext_reference', MarkdownPreview.bareReferenceRule);
@@ -126,25 +135,29 @@ export class MarkdownPreview {
     return md;
   }
 
+  /** The signed link the preview renders for a reference. */
   static createOpenUri(extensionId: string, request: OpenRequest): string {
-    return `${vscode.env.uriScheme}://${extensionId}${MarkdownPreview.OPEN_PATH}?${encodeURIComponent(JSON.stringify(request))}`;
+    const signed = { ...request, sig: MarkdownPreview.sign(request.reference, request.from) };
+    return `${vscode.env.uriScheme}://${extensionId}${MarkdownPreview.OPEN_PATH}?${encodeURIComponent(JSON.stringify(signed))}`;
   }
 
-  static parseOpenUri(uri: vscode.Uri): OpenRequest | undefined {
+  static parseOpenUri(uri: vscode.Uri): ParsedOpenRequest | undefined {
     if (uri.path !== MarkdownPreview.OPEN_PATH) {
       // Short form: the reference is the path, and a #L34-L43 suffix arrives as the fragment
       const reference = uri.path.replace(/^\/+/, '') + (uri.fragment ? `#${uri.fragment}` : '');
-      return reference ? { reference: reference.startsWith('@') ? reference : `@${reference}` } : undefined;
+      return reference ? { reference: reference.startsWith('@') ? reference : `@${reference}`, signed: false } : undefined;
     }
     // VS Code hands the query over decoded; decode again in case a caller encoded it twice
     for (const query of [uri.query, MarkdownPreview.safeDecode(uri.query)]) {
       try {
         const request = JSON.parse(query);
         if (typeof request?.reference === 'string') {
+          const from = typeof request.from === 'string' ? request.from : undefined;
           return {
             reference: request.reference,
-            from: typeof request.from === 'string' ? request.from : undefined,
+            from,
             split: request.split === 'new' ? 'new' : undefined,
+            signed: typeof request.sig === 'string' && MarkdownPreview.verify(request.sig, request.reference, from),
           };
         }
       } catch {
@@ -205,6 +218,16 @@ export class MarkdownPreview {
   private static describe(parsed: ParsedReference): string {
     const lines = ReferenceParser.describeLines(parsed);
     return `Open ${parsed.path}${lines ? ` (${lines})` : ''}`;
+  }
+
+  private static sign(reference: string, from: string | undefined): string {
+    return crypto.createHmac('sha256', MarkdownPreview.signingKey).update(JSON.stringify([reference, from ?? null])).digest('base64url');
+  }
+
+  private static verify(signature: string, reference: string, from: string | undefined): boolean {
+    const given = Buffer.from(signature);
+    const expected = Buffer.from(MarkdownPreview.sign(reference, from));
+    return given.length === expected.length && crypto.timingSafeEqual(given, expected);
   }
 
   private static safeDecode(value: string): string {

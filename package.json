@@ -39,6 +39,25 @@
   },
   "contributes": {
     "markdown.markdownItPlugins": true,
+    "configuration": {
+      "title": "InContext",
+      "properties": {
+        "incontext.linkServer.enabled": {
+          "type": "boolean",
+          "default": true,
+          "scope": "application",
+          "markdownDescription": "Open references from `http://localhost:<port>/open#@project/src/file.ts:L10:20` links, such as the ones the Claude desktop app shows. The link server listens on 127.0.0.1 only and opens files inside your workspace folders only."
+        },
+        "incontext.linkServer.port": {
+          "type": "integer",
+          "default": 46266,
+          "minimum": 1024,
+          "maximum": 65535,
+          "scope": "application",
+          "markdownDescription": "Port of the link server (`#incontext.linkServer.enabled#`). All VS Code windows share it: the first window to start answers links and passes each one on to the window that has the reference's folder."
+        }
+      }
+    },
     "markdown.previewStyles": [
       "./media/markdown-preview.css"
     ],
@@ -61,6 +80,16 @@
       {
         "command": "incontext.openReference",
         "title": "Open Reference"
+      },
+      {
+        "command": "incontext.setUpAiInstructions",
+        "title": "Set Up AI Assistant Instructions",
+        "category": "InContext"
+      },
+      {
+        "command": "incontext.removeAiInstructions",
+        "title": "Remove AI Assistant Instructions",
+        "category": "InContext"
       }
     ],
     "keybindings": [
@@ -126,6 +155,7 @@
     "pretest": "npm run compile-tests && npm run compile && npm run lint",
     "check-types": "tsc --noEmit --project tsconfig.json",
     "lint": "eslint src",
+    "sync-readme": "npm run compile-tests && node -e \"require('./out/AiInstructions.js').AiInstructions.syncReadme(process.cwd())\"",
     "test": "vscode-test"
   },
   "devDependencies": {
@@ -139,6 +169,6 @@
     "npm-run-all": "^4.1.5",
     "typescript": "^5.8.3",
     "@vscode/test-cli": "^0.0.10",
-    "@vscode/test-electron": "^2.5.2"
+    "@vscode/test-electron": "^3.1.0"
   }
 }

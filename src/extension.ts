@@ -22,18 +22,27 @@ import { ReferenceParser, ParsedReference } from './ReferenceParser';
 import { MarkdownPreview } from './MarkdownPreview';
 import { PreviewSplit } from './PreviewSplit';
 import { Logger } from './Logger';
+import { LinkServer } from './LinkServer';
+import { LinkService } from './LinkService';
+import { AiInstructionsCommands } from './AiInstructionsCommands';
 
 
+
+/** What openReference opened: a file reference's editor, or no editor for a directory. */
+interface OpenedReference {
+  editor?: vscode.TextEditor;
+}
 
 /**
  * Open and navigate to a reference
  * Handles references like @project/path/to/file.js:L10:20, @project/path/to/file.js#L10-L20,
  * @project/path/to/file.js or @project/path/to/directory/, plus markdown link paths such as ../file.js#L10-L20.
  * `from` is the document the reference was clicked in, used to resolve relative markdown link paths.
- * `viewColumn` is where a file opens: the active group for editor links, a split beside the preview for preview links.
- * Returns the editor a file reference opened in.
+ * `viewColumn` is where a file opens: the active group for links in editors, AI replies and the terminal, a split beside the preview for preview links.
+ * `workspaceOnly` refuses targets outside the workspace folders, for links from outside VS Code.
+ * Returns undefined when the reference could not be opened (after showing why).
  */
-async function openReference(reference: string, from?: string, viewColumn: vscode.ViewColumn = vscode.ViewColumn.Active): Promise<vscode.TextEditor | undefined> {
+async function openReference(reference: string, from?: string, viewColumn: vscode.ViewColumn = vscode.ViewColumn.Active, workspaceOnly = false): Promise<OpenedReference | undefined> {
   try {
     Logger.log('Opening reference:', reference, 'from', from);
 
@@ -54,11 +63,17 @@ async function openReference(reference: string, from?: string, viewColumn: vscod
       return;
     }
 
-    if (parsed.isDirectory) {
-      await openDirectoryReference(targetUri);
-    } else {
-      return await openFileReference(targetUri, parsed, viewColumn);
+    if (workspaceOnly && !ReferenceUtils.isInWorkspace(targetUri)) {
+      const errorMsg = `Refused to open ${reference}: it is outside the workspace folders`;
+      console.error(errorMsg);
+      vscode.window.showErrorMessage(errorMsg);
+      return;
     }
+
+    if (parsed.isDirectory) {
+      return await openDirectoryReference(targetUri) ? {} : undefined;
+    }
+    return { editor: await openFileReference(targetUri, parsed, viewColumn) };
 
   } catch (error) {
     console.error('Failed to open reference:', reference, error);
@@ -68,9 +83,9 @@ async function openReference(reference: string, from?: string, viewColumn: vscod
 }
 
 /**
- * Open and select a directory reference in the explorer
+ * Open and select a directory reference in the explorer. Returns false when there is no such directory.
  */
-async function openDirectoryReference(directoryUri: vscode.Uri) {
+async function openDirectoryReference(directoryUri: vscode.Uri): Promise<boolean> {
   Logger.log('Opening directory reference:', directoryUri.fsPath);
 
   // Check if directory exists
@@ -83,7 +98,7 @@ async function openDirectoryReference(directoryUri: vscode.Uri) {
     const errorMsg = `Directory not found: ${directoryUri.fsPath}`;
     console.error(errorMsg, error);
     vscode.window.showErrorMessage(errorMsg);
-    return;
+    return false;
   }
 
   // Reveal the directory in the explorer
@@ -100,6 +115,7 @@ async function openDirectoryReference(directoryUri: vscode.Uri) {
       console.error('Fallback also failed:', fallbackError);
     }
   }
+  return true;
 }
 
 /**
@@ -138,13 +154,31 @@ async function openFileReference(fileUri: vscode.Uri, parsed: ParsedReference, v
 }
 
 /**
- * Open a reference clicked outside the editor (the Markdown preview, chat, the terminal) in a split beside it,
- * instead of covering what was clicked. New-split clicks (Cmd/Ctrl+click in the preview) add another split.
+ * Open a reference clicked in the Markdown preview in a split beside it, instead of covering the preview.
+ * New-split clicks (Cmd/Ctrl+click in the preview) add another split.
  */
-async function openInSplit(reference: string, from?: string, newSplit = false) {
-  const editor = await openReference(reference, from, PreviewSplit.column(from ? vscode.Uri.parse(from) : undefined, newSplit));
-  if (editor && !newSplit) {
-    PreviewSplit.remember(editor.viewColumn);
+async function openInSplit(reference: string, from?: string, newSplit = false): Promise<void> {
+  const opened = await openReference(reference, from, PreviewSplit.column(from ? vscode.Uri.parse(from) : undefined, newSplit));
+  if (opened?.editor && !newSplit) {
+    PreviewSplit.remember(opened.editor.viewColumn);
+  }
+}
+
+/**
+ * Open a reference from outside VS Code (an AI reply in a desktop app, a vscode:// link) in the active editor group,
+ * like any other file, refusing targets outside the workspace folders. Returns whether it opened.
+ */
+async function openFromOutside(reference: string, from?: string): Promise<boolean> {
+  return await openReference(reference, from, vscode.ViewColumn.Active, true) !== undefined;
+}
+
+/** Whether `uri` is a document open in VS Code. */
+function isOpenDocument(uri: string): boolean {
+  try {
+    const parsed = vscode.Uri.parse(uri, true).toString();
+    return vscode.workspace.textDocuments.some(document => document.uri.toString() === parsed);
+  } catch {
+    return false;
   }
 }
 
@@ -378,10 +412,31 @@ export function activate(context: vscode.ExtensionContext) {
           vscode.window.showErrorMessage(`Invalid reference link: ${uri.toString(true)}`);
           return;
         }
-        await openInSplit(request.reference, request.from, request.split === 'new');
+        if (request.signed) {
+          await openInSplit(request.reference, request.from, request.split === 'new');
+          return;
+        }
+        // Copilot's short links, or a link from another app or a web page: these may only open what is inside the
+        // workspace folders, and may only name an open document to resolve relative paths from
+        if (request.from && !isOpenDocument(request.from)) {
+          const errorMsg = `Refused to open ${request.reference}: the link names a document that is not open (${request.from})`;
+          console.error(errorMsg);
+          vscode.window.showErrorMessage(errorMsg);
+          return;
+        }
+        await openFromOutside(request.reference, request.from);
       }
     })
   );
+
+  // Open references from http://localhost:<port>/open#@project/path:L34:43 links, such as the Claude desktop app's
+  const log = vscode.window.createOutputChannel('InContext', { log: true });
+  context.subscriptions.push(log);
+  const linkPage = LinkServer.loadPage(vscode.Uri.joinPath(context.extensionUri, 'media').fsPath, `${vscode.env.uriScheme}://${context.extension.id}`);
+  context.subscriptions.push(new LinkService(linkPage, reference => openFromOutside(reference), log));
+
+  // Install the instruction that makes Claude Code, Copilot and Codex cite code as incontext links
+  context.subscriptions.push(...AiInstructionsCommands.register(context));
 
   // Make @project/path:L34:43 references printed in the integrated terminal (Copilot CLI, scripts, ...) clickable
   const terminalLinks: vscode.TerminalLinkProvider<TerminalReferenceLink> = {
@@ -390,7 +445,7 @@ export function activate(context: vscode.ExtensionContext) {
         .map(({ reference, start }) => new TerminalReferenceLink(start, reference));
     },
     async handleTerminalLink(link: TerminalReferenceLink) {
-      await openInSplit(link.reference);
+      await openReference(link.reference);
     }
   };
   context.subscriptions.push(vscode.window.registerTerminalLinkProvider(terminalLinks));

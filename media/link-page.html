@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="incontext-uri-prefix" content="{{URI_PREFIX}}">
+  <title>Open in VS Code</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; margin: 3rem auto; max-width: 40rem; padding: 0 16px; }
+    p { overflow-wrap: anywhere; }
+  </style>
+</head>
+<body>
+  <p id="status">Opening in VS Code…</p>
+  <p><a id="fallback" hidden></a></p>
+  <script src="open.js"></script>
+</body>
+</html>

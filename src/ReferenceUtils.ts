@@ -1,5 +1,7 @@
+import { posix } from 'path';
 import * as vscode from 'vscode';
 import { ParsedReference } from './ReferenceParser';
+import { WorkspaceContainment } from './WorkspaceContainment';
 
 export class ReferenceUtils {
   /**
@@ -29,6 +31,21 @@ export class ReferenceUtils {
       return folder ? vscode.Uri.joinPath(folder.uri, path) : undefined;
     }
     return from ? vscode.Uri.joinPath(from, '..', path) : undefined;
+  }
+
+  /**
+   * Whether a resolved reference lies inside a workspace folder. `..` can lead a reference out of its folder,
+   * so links from outside VS Code are checked with this. Local files compare real paths, so a symlink inside
+   * the workspace can't lead out of it either.
+   */
+  static isInWorkspace(target: vscode.Uri): boolean {
+    const folders = vscode.workspace.workspaceFolders ?? [];
+    if (target.scheme === 'file') {
+      return WorkspaceContainment.isInside(target.fsPath, folders.filter(folder => folder.uri.scheme === 'file').map(folder => folder.uri.fsPath));
+    }
+    // Other file systems can't resolve symlinks here, so only the paths are compared
+    return folders.some(folder => folder.uri.scheme === target.scheme && folder.uri.authority === target.authority
+      && WorkspaceContainment.isWithin(target.path, folder.uri.path, posix));
   }
 
   private static decodePath(path: string): string {
