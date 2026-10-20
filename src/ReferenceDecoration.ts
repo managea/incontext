@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { ReferenceParser } from './ReferenceParser';
 
 export class ReferenceDecoration {
   public static compressedPathDecoration = vscode.window.createTextEditorDecorationType({
@@ -18,18 +19,16 @@ export class ReferenceDecoration {
     color: new vscode.ThemeColor('textLink.foreground')
   });
 
-  static applyPathCompressionDecorations(editor: vscode.TextEditor, REFERENCE_PATTERN: RegExp) {
+  static applyPathCompressionDecorations(editor: vscode.TextEditor) {
     const document = editor.document;
     const compressedDecorations: vscode.DecorationOptions[] = [];
     const highlightedDecorations: vscode.DecorationOptions[] = [];
     for (let lineIndex = 0; lineIndex < document.lineCount; lineIndex++) {
       const line = document.lineAt(lineIndex);
       const text = line.text;
-      let match;
-      REFERENCE_PATTERN.lastIndex = 0;
-      while ((match = REFERENCE_PATTERN.exec(text)) !== null) {
-        const fullReference = match[0];
-        const matchStart = match.index;
+      for (const match of ReferenceParser.findReferences(text)) {
+        const fullReference = match.reference;
+        const matchStart = match.start;
         const pathPart = fullReference.substring(1);
         const pathParts = pathPart.split('/');
         if (pathParts.length > 1) {

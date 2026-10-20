@@ -15,6 +15,7 @@
 - **Beautiful Inline Feedback:** When you copy a reference, a large, styled inline message (`Reference added to clipboard!`) appears next to your selection or cursor, with a border and padding for clarity.
 - **Explorer & Editor Integration:** Copy references from the editor or the file/folder context menu in the Explorer.
 - **Hover Previews:** Hover over a reference to preview code or see folder contents.
+- **Clickable in Markdown Preview:** References in your markdown become links in VS Code's Markdown preview — no changes to the markdown needed.
 - **Keyboard Shortcuts:** Use <kbd>Cmd</kbd>+<kbd>'</kbd> to copy references quickly.
 - **No intrusive popups:** All feedback is inline and non-blocking.
 
@@ -40,6 +41,15 @@
 
 - Hover over a reference to preview code or see folder contents inline.
 
+### Markdown Preview
+
+- References in markdown files are clickable in the Markdown preview (<kbd>Cmd</kbd>+<kbd>Shift</kbd>+<kbd>V</kbd>), whether written bare (`@project/src/file.ts:L10:20`) or in inline code. Clicking opens the file in the project's workspace folder with the lines selected, in a split beside the preview so the preview stays visible; later clicks reuse that split. <kbd>Cmd</kbd>+click (<kbd>Ctrl</kbd>+click on Windows/Linux) opens the reference in another new split instead.
+- Both line styles work: `:L10:20` and the markdown/GitHub style `#L10-L20`.
+- Hover a reference in the preview to peek at the referenced lines (or a folder's contents), like the hover in the editor.
+- Give a reference its own label with a markdown link: `[the parser](@project/src/file.ts#L10-L20)`.
+- Plain relative markdown links get line ranges too: `[the parser](../src/file.ts#L10-L20)`.
+- The first click may ask *Allow 'Code Reference Extension' extension to open this URI?* — tick **Do not ask me again**.
+
 ---
 
 ## 📦 Installation
@@ -51,6 +61,13 @@
 ---
 
 ## 📝 Changelog
+
+- **1.1.0**
+  - References are clickable in the Markdown preview — bare (`@project/src/file.ts:L10:20`), in inline code, or as `[label](@project/src/file.ts#L10-L20)` — with no changes to your markdown
+  - Hover a reference in the Markdown preview to peek at the referenced code or folder contents
+  - References clicked in the preview open in a split beside it, reused by later clicks; <kbd>Cmd</kbd>+click opens another split
+  - Line ranges work in both styles, `:L10:20` and `#L10-L20`, and plain relative markdown links like `[label](../src/file.ts#L10-L20)` get line ranges too
+  - Fixed references inside markdown links picking up the closing `)`
 
 - **1.0.1**
   - Added large, styled inline decoration for copy feedback (with border and padding)

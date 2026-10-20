@@ -18,27 +18,48 @@ import * as vscode from 'vscode';
 import { ReferenceProvider } from './ReferenceProvider';
 import { ReferenceUtils } from './ReferenceUtils';
 import { ReferenceDecoration } from './ReferenceDecoration';
+import { ReferenceParser, ParsedReference } from './ReferenceParser';
+import { MarkdownPreview } from './MarkdownPreview';
+import { PreviewSplit } from './PreviewSplit';
 import { Logger } from './Logger';
 
 
 
 /**
- * Open and navigate to a file reference
- * Handles references like @project/path/to/file.js:L10:20, @project/path/to/file.js, or @project/path/to/directory/
+ * Open and navigate to a reference
+ * Handles references like @project/path/to/file.js:L10:20, @project/path/to/file.js#L10-L20,
+ * @project/path/to/file.js or @project/path/to/directory/, plus markdown link paths such as ../file.js#L10-L20.
+ * `from` is the document the reference was clicked in, used to resolve relative markdown link paths.
+ * `viewColumn` is where a file opens: the active group for editor links, a split beside the preview for preview links.
+ * Returns the editor a file reference opened in.
  */
-async function openReference(reference: string) {
+async function openReference(reference: string, from?: string, viewColumn: vscode.ViewColumn = vscode.ViewColumn.Active): Promise<vscode.TextEditor | undefined> {
   try {
-    Logger.log('Opening reference:', reference);
-    
-    // Check if this is a directory reference (ends with /)
-    const isDirectoryReference = reference.endsWith('/');
-    
-    if (isDirectoryReference) {
-      await openDirectoryReference(reference);
-    } else {
-      await openFileReference(reference);
+    Logger.log('Opening reference:', reference, 'from', from);
+
+    const parsed = ReferenceParser.parse(reference);
+    if (!parsed) {
+      const errorMsg = `Invalid reference format: ${reference}`;
+      console.error(errorMsg);
+      vscode.window.showErrorMessage(errorMsg);
+      return;
     }
-    
+
+    const fromUri = from ? vscode.Uri.parse(from) : undefined;
+    const targetUri = ReferenceUtils.resolveReference(parsed, fromUri);
+    if (!targetUri) {
+      const errorMsg = 'No workspace folder open';
+      console.error(errorMsg);
+      vscode.window.showErrorMessage(errorMsg);
+      return;
+    }
+
+    if (parsed.isDirectory) {
+      await openDirectoryReference(targetUri);
+    } else {
+      return await openFileReference(targetUri, parsed, viewColumn);
+    }
+
   } catch (error) {
     console.error('Failed to open reference:', reference, error);
     const errorMsg = `Failed to open reference: ${reference}. Error: ${error instanceof Error ? error.message : String(error)}`;
@@ -49,45 +70,9 @@ async function openReference(reference: string) {
 /**
  * Open and select a directory reference in the explorer
  */
-async function openDirectoryReference(reference: string) {
-  Logger.log('Opening directory reference:', reference);
-  
-  // Remove the @ prefix and trailing slash
-  const pathWithoutPrefix = reference.substring(1, reference.length - 1);
-  
-  // Get workspace folders
-  const workspaceFolders = vscode.workspace.workspaceFolders;
-  if (!workspaceFolders) {
-    const errorMsg = 'No workspace folder open';
-    console.error(errorMsg);
-    vscode.window.showErrorMessage(errorMsg);
-    return;
-  }
-  
-  // Try to match the project name with workspace folder
-  let targetWorkspaceFolder = workspaceFolders[0]; // Default to first workspace
-  let directoryRelativePath = pathWithoutPrefix;
-  
-  // Extract the relative path from the full path (remove project name if present)
-  const pathParts = pathWithoutPrefix.split('/');
-  
-  if (pathParts.length > 1) {
-    const projectName = pathParts[0];
-    const matchingFolder = workspaceFolders.find(folder => folder.name === projectName);
-    if (matchingFolder) {
-      targetWorkspaceFolder = matchingFolder;
-      directoryRelativePath = pathParts.slice(1).join('/');
-    } else {
-      Logger.log('No matching workspace folder found, using full path as relative');
-      directoryRelativePath = pathWithoutPrefix;
-    }
-  }
-  
-  // Construct the full directory URI
-  const directoryUri = directoryRelativePath 
-    ? vscode.Uri.joinPath(targetWorkspaceFolder.uri, directoryRelativePath)
-    : targetWorkspaceFolder.uri;
-  
+async function openDirectoryReference(directoryUri: vscode.Uri) {
+  Logger.log('Opening directory reference:', directoryUri.fsPath);
+
   // Check if directory exists
   try {
     const stat = await vscode.workspace.fs.stat(directoryUri);
@@ -100,7 +85,7 @@ async function openDirectoryReference(reference: string) {
     vscode.window.showErrorMessage(errorMsg);
     return;
   }
-  
+
   // Reveal the directory in the explorer
   try {
     await vscode.commands.executeCommand('revealInExplorer', directoryUri);
@@ -118,83 +103,38 @@ async function openDirectoryReference(reference: string) {
 }
 
 /**
- * Open and navigate to a file reference
+ * Open a file reference and select its line range
  */
-async function openFileReference(reference: string) {
-  Logger.log('Opening file reference:', reference);
-  
-  // Parse the reference to extract file path and line numbers
-  // Expected format: @project/path/to/file.js:L10:20 or @project/path/to/file.js
-  const referenceMatch = reference.match(/^@(.+?)(?::L(\d+)(?::(\d+))?)?$/);
-  
-  if (!referenceMatch) {
-    const errorMsg = `Invalid reference format: ${reference}`;
-    console.error(errorMsg);
-    vscode.window.showErrorMessage(errorMsg);
-    return;
-  }
-  
-  const [, fullPath, startLineStr, endLineStr] = referenceMatch;
-  
-  // Get workspace folders
-  const workspaceFolders = vscode.workspace.workspaceFolders;
-  if (!workspaceFolders) {
-    const errorMsg = 'No workspace folder open';
-    console.error(errorMsg);
-    vscode.window.showErrorMessage(errorMsg);
-    return;
-  }
-  
-  // Try to match the project name with workspace folder
-  let targetWorkspaceFolder = workspaceFolders[0]; // Default to first workspace
-  let fileRelativePath = fullPath;
-  
-  // Extract the relative path from the full path (remove project name if present)
-  const pathParts = fullPath.split('/');
-  
-  if (pathParts.length > 1) {
-    const projectName = pathParts[0];
-    const matchingFolder = workspaceFolders.find(folder => folder.name === projectName);
-    if (matchingFolder) {
-      targetWorkspaceFolder = matchingFolder;
-      fileRelativePath = pathParts.slice(1).join('/');
-    } else {
-      Logger.log('No matching workspace folder found, using full path as relative');
-      fileRelativePath = fullPath;
-    }
-  }
-  
-  // Construct the full file URI
-  const fileUri = vscode.Uri.joinPath(targetWorkspaceFolder.uri, fileRelativePath);
-  
+async function openFileReference(fileUri: vscode.Uri, parsed: ParsedReference, viewColumn: vscode.ViewColumn): Promise<vscode.TextEditor> {
   // Open the document
   const document = await vscode.workspace.openTextDocument(fileUri);
-  
+
   // Calculate line numbers (VS Code uses 0-based indexing)
   let startLine = 0;
   let endLine = 0;
-  
-  if (startLineStr) {
-    startLine = Math.max(0, parseInt(startLineStr, 10) - 1); // Convert from 1-based to 0-based
-    endLine = endLineStr ? Math.max(0, parseInt(endLineStr, 10) - 1) : startLine;
+
+  if (parsed.startLine !== undefined) {
+    startLine = Math.min(parsed.startLine - 1, document.lineCount - 1);
+    endLine = Math.min((parsed.endLine ?? parsed.startLine) - 1, document.lineCount - 1);
   }
-  
+
   // Create selection range
   const startPosition = new vscode.Position(startLine, 0);
-  const endPosition = new vscode.Position(endLine, document.lineAt(Math.min(endLine, document.lineCount - 1)).text.length);
+  const endPosition = new vscode.Position(endLine, document.lineAt(endLine).text.length);
   const selection = new vscode.Selection(startPosition, endPosition);
-  
+
   // Show the document with the selection
   const editor = await vscode.window.showTextDocument(document, {
     selection: selection,
-    viewColumn: vscode.ViewColumn.Active,
+    viewColumn,
     preserveFocus: false
   });
-  
+
   // Reveal the range in the editor
   editor.revealRange(selection, vscode.TextEditorRevealType.InCenter);
-  
+
   Logger.log('Successfully opened file:', fileUri.fsPath, 'at lines', startLine + 1, '-', endLine + 1);
+  return editor;
 }
 
 // This method is called when your extension is activated
@@ -230,12 +170,12 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(ReferenceDecoration.compressedPathDecoration);
   context.subscriptions.push(ReferenceDecoration.highlightedPathDecoration);
   if (vscode.window.activeTextEditor) {
-    ReferenceDecoration.applyPathCompressionDecorations(vscode.window.activeTextEditor, /@([^\s@]+(?::[^:\s]*)*\/?)/g);
+    ReferenceDecoration.applyPathCompressionDecorations(vscode.window.activeTextEditor);
   }
   context.subscriptions.push(
     vscode.window.onDidChangeActiveTextEditor(editor => {
       if (editor) {
-        ReferenceDecoration.applyPathCompressionDecorations(editor, /@([^\s@]+(?::[^:\s]*)*\/?)/g);
+        ReferenceDecoration.applyPathCompressionDecorations(editor);
       }
     })
   );
@@ -245,7 +185,7 @@ export function activate(context: vscode.ExtensionContext) {
       if (editor && event.document === editor.document) {
         setTimeout(() => {
           if (vscode.window.activeTextEditor === editor) {
-            ReferenceDecoration.applyPathCompressionDecorations(editor, /@([^\s@]+(?::[^:\s]*)*\/?)/g);
+            ReferenceDecoration.applyPathCompressionDecorations(editor);
           }
         }, 500);
       }
@@ -405,78 +345,40 @@ export function activate(context: vscode.ExtensionContext) {
 
   // Register command to open reference (used by DocumentLinkProvider)
   context.subscriptions.push(
-    vscode.commands.registerCommand('incontext.openReference', async (reference: string) => {
-      await openReference(reference);
+    vscode.commands.registerCommand('incontext.openReference', async (reference: string, from?: string) => {
+      await openReference(reference, from);
     })
   );
 
-  // Register DocumentLinkProvider for native link highlighting and navigation
+  // Open references clicked in the Markdown preview, which links to vscode://<extension id>/open?...
   context.subscriptions.push(
-    vscode.languages.registerDocumentLinkProvider(
-      { scheme: 'file' }, // Apply to all file types
-      {
-        provideDocumentLinks(document: vscode.TextDocument, token: vscode.CancellationToken): vscode.DocumentLink[] {
-          const documentLinks: vscode.DocumentLink[] = [];
-          
-          // Search for references in each line
-          for (let lineIndex = 0; lineIndex < document.lineCount; lineIndex++) {
-            const line = document.lineAt(lineIndex);
-            const text = line.text;
-            
-            // Find all references in the line
-            let match;
-            const pattern = /@([^\s@]+(?::[^:\s]*)*\/?)/g;
-            pattern.lastIndex = 0; // Reset regex
-            
-            while ((match = pattern.exec(text)) !== null) {
-              const matchStart = match.index;
-              const matchEnd = match.index + match[0].length;
-              const reference = match[0];
-              
-              try {
-                // Parse the reference to validate it
-                const isDirectoryReference = reference.endsWith('/');
-                let referenceMatch;
-                
-                if (isDirectoryReference) {
-                  // For directory references, just check basic format: @project/path/
-                  referenceMatch = reference.match(/^@(.+)\/$/);
-                } else {
-                  // For file references, check format: @project/path or @project/path:L10:20
-                  referenceMatch = reference.match(/^@(.+?)(?::L(\d+)(?::(\d+))?)?$/);
-                }
-                
-                if (!referenceMatch) {
-                  continue;
-                }
-                
-                // Create the range for the link
-                const range = new vscode.Range(
-                  lineIndex, matchStart,
-                  lineIndex, matchEnd
-                );
-                
-                // Create a command URI that will trigger our navigation command
-                const commandUri = vscode.Uri.parse(`command:incontext.openReference?${encodeURIComponent(JSON.stringify([reference]))}`);
-                
-                // Create the document link
-                const link = new vscode.DocumentLink(range, commandUri);
-                const referenceType = isDirectoryReference ? 'directory' : 'file';
-                link.tooltip = `Navigate to ${referenceType} ${reference} (Ctrl+Click)`;
-                
-                documentLinks.push(link);
-              } catch (error) {
-                console.error('Error creating document link for reference:', reference, error);
-              }
-            }
-          }
-          
-          return documentLinks;
+    vscode.window.registerUriHandler({
+      async handleUri(uri: vscode.Uri) {
+        if (uri.path !== MarkdownPreview.OPEN_PATH) {
+          return;
+        }
+        const request = MarkdownPreview.parseOpenUri(uri);
+        if (!request) {
+          vscode.window.showErrorMessage(`Invalid reference link: ${uri.toString(true)}`);
+          return;
+        }
+        // Open in a split beside the preview instead of covering it; Cmd/Ctrl+click asks for a new split
+        const newSplit = request.split === 'new';
+        const from = request.from ? vscode.Uri.parse(request.from) : undefined;
+        const editor = await openReference(request.reference, request.from, PreviewSplit.column(from, newSplit));
+        if (editor && !newSplit) {
+          PreviewSplit.remember(editor.viewColumn);
         }
       }
-    )
+    })
   );
 
+  // Picked up by the built-in Markdown preview through the markdown.markdownItPlugins contribution
+  return {
+    extendMarkdownIt(md: Parameters<typeof MarkdownPreview.extendMarkdownIt>[0]) {
+      return MarkdownPreview.extendMarkdownIt(md, context.extension.id);
+    }
+  };
 }
 
 // This method is called when your extension is deactivated

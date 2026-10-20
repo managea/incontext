@@ -1,42 +1,26 @@
 import * as vscode from 'vscode';
+import { ReferenceParser } from './ReferenceParser';
+import { ReferenceUtils } from './ReferenceUtils';
 
 
 export class ReferenceProvider implements vscode.HoverProvider, vscode.DocumentLinkProvider {
-  static readonly REFERENCE_PATTERN = /@([^\s@]+(?::[^:\s]*)*\/?)/g;
-  static readonly FILE_REF_PATTERN = /^@(.+?)(?::L(\d+)(?::(\d+))?)?$/;
-  static readonly DIR_REF_PATTERN = /^@(.+)\/$/;
+  // The target of a markdown link, e.g. `../src/file.ts#L34-L43` in `[label](../src/file.ts#L34-L43)`
+  static readonly MARKDOWN_LINK_TARGET_PATTERN = /\]\(\s*<?([^\s<>()]+)/g;
 
   async provideHover(document: vscode.TextDocument, position: vscode.Position, token: vscode.CancellationToken): Promise<vscode.Hover | undefined> {
     const line = document.lineAt(position.line).text;
-    let match;
-    ReferenceProvider.REFERENCE_PATTERN.lastIndex = 0;
-    while ((match = ReferenceProvider.REFERENCE_PATTERN.exec(line)) !== null) {
-      const matchStart = match.index;
-      const matchEnd = match.index + match[0].length;
-      if (position.character >= matchStart && position.character <= matchEnd) {
-        const reference = match[0];
-        if (reference.endsWith('/')) {
+    for (const { reference, start, end } of ReferenceParser.findReferences(line)) {
+      if (position.character >= start && position.character <= end) {
+        const parsed = ReferenceParser.parse(reference);
+        const targetUri = parsed && ReferenceUtils.resolveReference(parsed);
+        if (!parsed || !targetUri) {
+          return;
+        }
+        if (parsed.isDirectory) {
           // Directory reference
-          const dirMatch = reference.match(ReferenceProvider.DIR_REF_PATTERN);
-          if (!dirMatch) return;
-          const fullPath = dirMatch[1];
-          const workspaceFolders = vscode.workspace.workspaceFolders;
-          if (!workspaceFolders) return;
-          let targetWorkspaceFolder = workspaceFolders[0];
-          let dirRelativePath = fullPath;
-          const pathParts = fullPath.split('/');
-          if (pathParts.length > 1) {
-            const projectName = pathParts[0];
-            const matchingFolder = workspaceFolders.find(f => f.name === projectName);
-            if (matchingFolder) {
-              targetWorkspaceFolder = matchingFolder;
-              dirRelativePath = pathParts.slice(1).join('/');
-            }
-          }
-          const dirUri = vscode.Uri.joinPath(targetWorkspaceFolder.uri, dirRelativePath);
           let entryNames: string[] = [];
           try {
-            const dirList = await vscode.workspace.fs.readDirectory(dirUri);
+            const dirList = await vscode.workspace.fs.readDirectory(targetUri);
             entryNames = dirList.map(([name, type]) => {
               if (type & vscode.FileType.Directory) return `📁 ${name}/`;
               if (type & vscode.FileType.SymbolicLink) return `🔗 ${name}`;
@@ -53,30 +37,13 @@ export class ReferenceProvider implements vscode.HoverProvider, vscode.DocumentL
           return new vscode.Hover(md);
         } else {
           // File reference
-          const refMatch = reference.match(ReferenceProvider.FILE_REF_PATTERN);
-          if (!refMatch) return;
-          const [, fullPath, startLineStr, endLineStr] = refMatch;
-          const workspaceFolders = vscode.workspace.workspaceFolders;
-          if (!workspaceFolders) return;
-          let targetWorkspaceFolder = workspaceFolders[0];
-          let fileRelativePath = fullPath;
-          const pathParts = fullPath.split('/');
-          if (pathParts.length > 1) {
-            const projectName = pathParts[0];
-            const matchingFolder = workspaceFolders.find(f => f.name === projectName);
-            if (matchingFolder) {
-              targetWorkspaceFolder = matchingFolder;
-              fileRelativePath = pathParts.slice(1).join('/');
-            }
-          }
-          const fileUri = vscode.Uri.joinPath(targetWorkspaceFolder.uri, fileRelativePath);
           let startLine = 0, endLine = 0;
-          if (startLineStr) {
-            startLine = Math.max(0, parseInt(startLineStr, 10) - 1);
-            endLine = endLineStr ? Math.max(0, parseInt(endLineStr, 10) - 1) : startLine;
+          if (parsed.startLine !== undefined) {
+            startLine = parsed.startLine - 1;
+            endLine = (parsed.endLine ?? parsed.startLine) - 1;
           }
-          const lines = await ReferenceProvider.readFileLines(fileUri, startLine, endLine);
-          const ext = fileUri.path.split('.').pop() || '';
+          const lines = await ReferenceProvider.readFileLines(targetUri, startLine, endLine);
+          const ext = targetUri.path.split('.').pop() || '';
           const lang = ext.match(/^[a-zA-Z0-9]+$/) ? ext : '';
           const codeBlock = '```' + lang + '\n' + lines.join('\n') + '\n```';
           const md = new vscode.MarkdownString(`**Preview of \`${reference}\`**\n\n${codeBlock}`);
@@ -90,38 +57,37 @@ export class ReferenceProvider implements vscode.HoverProvider, vscode.DocumentL
 
   provideDocumentLinks(document: vscode.TextDocument, token: vscode.CancellationToken): vscode.DocumentLink[] {
     const documentLinks: vscode.DocumentLink[] = [];
+    const isMarkdown = document.languageId === 'markdown';
     for (let lineIndex = 0; lineIndex < document.lineCount; lineIndex++) {
-      const line = document.lineAt(lineIndex);
-      const text = line.text;
-      let match;
-      ReferenceProvider.REFERENCE_PATTERN.lastIndex = 0;
-      while ((match = ReferenceProvider.REFERENCE_PATTERN.exec(text)) !== null) {
-        const matchStart = match.index;
-        const matchEnd = match.index + match[0].length;
-        const reference = match[0];
-        try {
-          const isDirectoryReference = reference.endsWith('/');
-          let referenceMatch;
-          if (isDirectoryReference) {
-            referenceMatch = reference.match(ReferenceProvider.DIR_REF_PATTERN);
-          } else {
-            referenceMatch = reference.match(ReferenceProvider.FILE_REF_PATTERN);
+      const text = document.lineAt(lineIndex).text;
+      for (const { reference, start, end } of ReferenceParser.findReferences(text)) {
+        const referenceType = reference.endsWith('/') ? 'directory' : 'file';
+        documentLinks.push(ReferenceProvider.createLink(lineIndex, start, end, [reference], `Navigate to ${referenceType} ${reference} (Ctrl+Click)`));
+      }
+      if (isMarkdown) {
+        // Markdown links to plain paths with line ranges, which VS Code's own markdown links cannot select
+        ReferenceProvider.MARKDOWN_LINK_TARGET_PATTERN.lastIndex = 0;
+        let match;
+        while ((match = ReferenceProvider.MARKDOWN_LINK_TARGET_PATTERN.exec(text)) !== null) {
+          const target = match[1];
+          const parsed = !target.startsWith('@') && ReferenceParser.parseMarkdownLinkTarget(target);
+          if (parsed) {
+            const start = match.index + match[0].length - target.length;
+            const lines = ReferenceParser.describeLines(parsed);
+            documentLinks.push(ReferenceProvider.createLink(lineIndex, start, start + target.length, [target, document.uri.toString()], `Navigate to ${parsed.path}, ${lines} (Ctrl+Click)`));
           }
-          if (!referenceMatch) {
-            continue;
-          }
-          const range = new vscode.Range(lineIndex, matchStart, lineIndex, matchEnd);
-          const commandUri = vscode.Uri.parse(`command:incontext.openReference?${encodeURIComponent(JSON.stringify([reference]))}`);
-          const link = new vscode.DocumentLink(range, commandUri);
-          const referenceType = isDirectoryReference ? 'directory' : 'file';
-          link.tooltip = `Navigate to ${referenceType} ${reference} (Ctrl+Click)`;
-          documentLinks.push(link);
-        } catch (error) {
-          console.error('Error creating document link for reference:', reference, error);
         }
       }
     }
     return documentLinks;
+  }
+
+  private static createLink(line: number, start: number, end: number, args: string[], tooltip: string): vscode.DocumentLink {
+    const range = new vscode.Range(line, start, line, end);
+    const commandUri = vscode.Uri.parse(`command:incontext.openReference?${encodeURIComponent(JSON.stringify(args))}`);
+    const link = new vscode.DocumentLink(range, commandUri);
+    link.tooltip = tooltip;
+    return link;
   }
 
   static async readFileLines(uri: vscode.Uri, start: number, end: number): Promise<string[]> {

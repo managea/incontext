@@ -1,6 +1,44 @@
 import * as vscode from 'vscode';
+import { ParsedReference } from './ReferenceParser';
 
 export class ReferenceUtils {
+  /**
+   * Resolves a parsed reference to a file or directory URI.
+   * `@project/path` matches `project` against workspace folder names, falling back to the first folder.
+   * Plain markdown link paths resolve like VS Code does: `/path` from the workspace folder of `from`, others relative to `from`.
+   */
+  static resolveReference(parsed: ParsedReference, from?: vscode.Uri): vscode.Uri | undefined {
+    const workspaceFolders = vscode.workspace.workspaceFolders;
+    const path = ReferenceUtils.decodePath(parsed.path);
+    if (parsed.isWorkspaceReference) {
+      if (!workspaceFolders || workspaceFolders.length === 0) {
+        return undefined;
+      }
+      const pathParts = path.split('/');
+      if (pathParts.length > 1 || parsed.isDirectory) {
+        const matchingFolder = workspaceFolders.find(folder => folder.name === pathParts[0]);
+        if (matchingFolder) {
+          const relativePath = pathParts.slice(1).join('/');
+          return relativePath ? vscode.Uri.joinPath(matchingFolder.uri, relativePath) : matchingFolder.uri;
+        }
+      }
+      return path ? vscode.Uri.joinPath(workspaceFolders[0].uri, path) : workspaceFolders[0].uri;
+    }
+    if (path.startsWith('/')) {
+      const folder = (from && vscode.workspace.getWorkspaceFolder(from)) || workspaceFolders?.[0];
+      return folder ? vscode.Uri.joinPath(folder.uri, path) : undefined;
+    }
+    return from ? vscode.Uri.joinPath(from, '..', path) : undefined;
+  }
+
+  private static decodePath(path: string): string {
+    try {
+      return decodeURIComponent(path);
+    } catch {
+      return path;
+    }
+  }
+
   static resolveWorkspacePath(uri: vscode.Uri): { relativePath: string; projectName: string } {
     const workspaceFolders = vscode.workspace.workspaceFolders;
     if (!workspaceFolders) {

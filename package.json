@@ -3,7 +3,7 @@
   "displayName": "Code Reference Extension",
   "description": "Prompt the right way. Structure your AI prompts naturally, with inline, pinpoint-accurate code references — delivering better LLM outputs, preserving your visual context, and enabling logical, easy-to-read prompts.",
   "publisher": "managea",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "icon": "icon.png",
   "license": "MIT",
   "repository": {
@@ -38,6 +38,13 @@
     }
   },
   "contributes": {
+    "markdown.markdownItPlugins": true,
+    "markdown.previewStyles": [
+      "./media/markdown-preview.css"
+    ],
+    "markdown.previewScripts": [
+      "./media/markdown-preview.js"
+    ],
     "commands": [
       {
         "command": "incontext.copyCodeReference",
