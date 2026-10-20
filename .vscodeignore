@@ -14,3 +14,5 @@ vsc-extension-quickstart.md
 **/.vscode-test.*
 **/*.vsix
 markdown-links.md
+RELEASING.md
+.github/**
