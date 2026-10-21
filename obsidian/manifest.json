@@ -1,0 +1,9 @@
+{
+  "id": "incontext-links",
+  "name": "InContext Links",
+  "minAppVersion": "1.0.0",
+  "description": "Makes code references such as @project/src/file.ts:L10:20 clickable, and opens them in VS Code with the lines selected.",
+  "author": "Asanga Manage",
+  "authorUrl": "https://github.com/managea",
+  "isDesktopOnly": true
+}

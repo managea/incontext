@@ -5,6 +5,12 @@
 		"lib": [
 			"ES2022"
 		],
+		// Only these; the Obsidian plugin's packages bring browser types (@types/codemirror) the extension can't use
+		"types": [
+			"mocha",
+			"node",
+			"vscode"
+		],
 		"sourceMap": true,
 		"rootDir": "src",
 		"strict": true   /* enable all strict type-checking options */
