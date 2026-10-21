@@ -145,6 +145,9 @@ Run **InContext: Set Up AI Assistant Instructions** from the Command Palette. It
 
 ## 📝 Changelog
 
+- **1.5.0**
+  - **InContext: Install Obsidian Plugin** installs the InContext Links plugin, which the extension now ships, into the Obsidian vaults you pick, and turns it on. Run it again after updating incontext to update the plugin. **InContext: Remove Obsidian Plugin** takes it out again
+
 - **1.4.0**
   - Mermaid diagrams in the Markdown preview: a box whose `click` line links to a reference (the bare reference, or a link-server link) opens it beside the preview like any other reference, and in a new split on <kbd>Cmd</kbd>+click. Before, a click opened an unsigned link over the preview, and a double-click switched to the editor
   - **InContext Links**, a companion plugin for Obsidian: references in notes and Mermaid diagrams open in VS Code with the lines selected. Install it with BRAT (`managea/incontext`) or from this release's files; see [Obsidian](#obsidian)
