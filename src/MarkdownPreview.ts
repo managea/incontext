@@ -10,6 +10,7 @@ interface Token {
   attrs: [string, string][] | null;
   content: string;
   markup: string;
+  info: string;
   attrGet(name: string): string | null;
   attrSet(name: string, value: string): void;
   attrJoin(name: string, value: string): void;
@@ -23,6 +24,11 @@ interface InlineState {
   push(type: string, tag: string, nesting: number): Token;
 }
 
+interface CoreState {
+  tokens: Token[];
+  Token: new (type: string, tag: string, nesting: number) => Token;
+}
+
 interface Renderer {
   renderToken(tokens: Token[], idx: number, options: unknown): string;
 }
@@ -30,6 +36,7 @@ interface Renderer {
 type RenderRule = (tokens: Token[], idx: number, options: unknown, env: { currentDocument?: vscode.Uri } | undefined, self: Renderer) => string;
 
 interface MarkdownIt {
+  core: { ruler: { push(name: string, rule: (state: CoreState) => void): void } };
   inline: { ruler: { push(name: string, rule: (state: InlineState, silent: boolean) => boolean): void } };
   renderer: { rules: Record<string, RenderRule | undefined> };
   utils: { escapeHtml(text: string): string };
@@ -59,13 +66,40 @@ export interface ParsedOpenRequest extends OpenRequest {
  * extension host. Only signed links may open files outside the workspace folders, such as a sibling repository.
  * Each link is wrapped in `.incontext-reference` with a hover peek of the referenced code
  * (styled and positioned by media/markdown-preview.css and .js).
+ * Mermaid diagrams link through their `click` and `link` lines instead (see `findDiagramReferences`).
  */
 export class MarkdownPreview {
   static readonly OPEN_PATH = '/open';
   private static readonly signingKey = crypto.randomBytes(32);
+  private static readonly DIAGRAM_LINKS_TOKEN = 'incontext_diagram_links';
 
   static extendMarkdownIt(md: MarkdownIt, extensionId: string): MarkdownIt {
     md.inline.ruler.push('incontext_reference', MarkdownPreview.bareReferenceRule);
+
+    // Mermaid draws the links in a diagram as SVG links, which neither this plugin nor the preview's own link
+    // handling sees, so a click would leave the preview as an unsigned link. Instead, the signed link for each of
+    // the diagram's references goes in a hidden element after it, and media/markdown-preview.js swaps it in on click.
+    // Parsing has no current document (VS Code passes it only when rendering), so the links are signed there.
+    md.core.ruler.push(MarkdownPreview.DIAGRAM_LINKS_TOKEN, state => {
+      for (let i = state.tokens.length - 1; i >= 0; i--) {
+        const token = state.tokens[i];
+        const references = token.type === 'fence' && token.info.trim().split(/\s+/)[0].toLowerCase() === 'mermaid'
+          ? MarkdownPreview.findDiagramReferences(token.content)
+          : [];
+        if (references.length > 0) {
+          const links = new state.Token(MarkdownPreview.DIAGRAM_LINKS_TOKEN, '', 0);
+          links.content = references.join('\n');
+          state.tokens.splice(i + 1, 0, links);
+        }
+      }
+    });
+    md.renderer.rules[MarkdownPreview.DIAGRAM_LINKS_TOKEN] = (tokens, idx, _options, env) => {
+      const from = env?.currentDocument?.toString();
+      const links = Object.fromEntries(tokens[idx].content.split('\n')
+        .map(reference => [reference, MarkdownPreview.createOpenUri(extensionId, { reference, from })]));
+      return `<span hidden class="incontext-diagram-links" data-links="${md.utils.escapeHtml(JSON.stringify(links))}"></span>\n`;
+    };
+
     const renderer = {
       escapeHtml: (text: string) => md.utils.escapeHtml(text),
       highlight: (code: string, lang: string, attrs: string) => md.options.highlight?.(code, lang, attrs) ?? '',
@@ -165,6 +199,22 @@ export class MarkdownPreview {
       }
     }
     return undefined;
+  }
+
+  /**
+   * The references a Mermaid diagram links to: link-server links (`http://localhost:<port>/open#@...`, with the `#`
+   * also written `#35;`, which sequence `link` lines need) and bare references as `click` targets
+   * (`click A "@project/path:L34:43"`). References written in labels are not links, so they are left out.
+   */
+  static findDiagramReferences(source: string): string[] {
+    const references = new Set<string>();
+    for (const match of source.matchAll(/https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\])(?::\d+)?\/open(?:#|#35;)(@[^\s"'<>]+)/g)) {
+      references.add(match[1]);
+    }
+    for (const match of source.matchAll(/^\s*click\s+\S+\s+(?:href\s+)?"(@[^"\s]+)"/gm)) {
+      references.add(match[1]);
+    }
+    return [...references].filter(reference => MarkdownPreview.isBareReference(reference));
   }
 
   /** Turns `@project/path/file.ts:L34:43` in markdown text into a link. */

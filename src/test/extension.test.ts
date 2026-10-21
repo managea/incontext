@@ -255,6 +255,69 @@ suite('Extension', () => {
       assert.ok(inOneGroup());
     });
   });
+
+  suite('Mermaid diagram links', () => {
+    const diagram = [
+      '```mermaid',
+      'flowchart TD',
+      '  A["Label @alpha/src/a.ts:L1:2"] --> B',
+      '  click A "http://localhost:46266/open#@alpha/src/a.ts:L3:4" "Tooltip"',
+      '  click B "@beta/b.ts:L5"',
+      '```',
+      '',
+    ].join('\n');
+
+    /** The signed links the preview writes beside the diagram, by reference. */
+    async function diagramLinks(document: vscode.TextDocument): Promise<Record<string, string>> {
+      await waitFor('the Markdown extension', async () => (await vscode.commands.getCommands(true)).includes('markdown.api.render'));
+      const html = await vscode.commands.executeCommand<string>('markdown.api.render', document);
+      const data = /class="incontext-diagram-links" data-links="([^"]*)"/.exec(html)?.[1];
+      assert.ok(data, html);
+      return JSON.parse(data.replace(/&quot;/g, '"').replace(/&amp;/g, '&'));
+    }
+
+    test('finds link-server links and bare @ click targets, not references in labels', () => {
+      const source = [
+        'flowchart TD',
+        '  A["Label @alpha/src/a.ts:L1:2"] --> B',
+        '  click A "http://localhost:46266/open#@alpha/src/a.ts:L3:4" "Tooltip"',
+        '  click B href "@beta/b.ts:L5"',
+        '  click C "@alpha/src/"',
+        '  click D "https://example.com/@alpha/src/a.ts"',
+        '  click E "@copilot"',
+      ].join('\n');
+      assert.deepStrictEqual(MarkdownPreview.findDiagramReferences(source), ['@alpha/src/a.ts:L3:4', '@beta/b.ts:L5', '@alpha/src/']);
+      const sequence = 'sequenceDiagram\n  link Alice: Open @ http://127.0.0.1:46266/open#35;@alpha/src/a.ts:L6:7';
+      assert.deepStrictEqual(MarkdownPreview.findDiagramReferences(sequence), ['@alpha/src/a.ts:L6:7']);
+    });
+
+    test('the preview writes a signed link for each of the diagram\'s references, from the document', async () => {
+      const document = await vscode.workspace.openTextDocument({ language: 'markdown', content: diagram });
+      const links = await diagramLinks(document);
+      assert.deepStrictEqual(Object.keys(links), ['@alpha/src/a.ts:L3:4', '@beta/b.ts:L5']);
+      for (const [reference, link] of Object.entries(links)) {
+        const request = MarkdownPreview.parseOpenUri(vscode.Uri.parse(link, true));
+        assert.deepStrictEqual([request?.reference, request?.from], [reference, document.uri.toString()]);
+        // Signed with the running extension's key, which this module doesn't share: the next test opens the link
+        assert.match(decodeURIComponent(link), /"sig":"[^"]+"/);
+      }
+    });
+
+    test('a diagram\'s signed link opens the reference in a split, which only signed links do', async () => {
+      const document = await vscode.workspace.openTextDocument({ language: 'markdown', content: diagram });
+      await vscode.env.openExternal(vscode.Uri.parse((await diagramLinks(document))['@alpha/src/a.ts:L3:4'], true));
+      await waitFor('a.ts to open', () => activeFile() === path.join(folder('alpha'), 'src', 'a.ts'));
+      assert.deepStrictEqual(selectedLines(), [3, 4]);
+      assert.ok(!inOneGroup());
+    });
+
+    test('a document without diagram links gets no link list', async () => {
+      const document = await vscode.workspace.openTextDocument({ language: 'markdown', content: '```mermaid\nflowchart TD\n  A --> B\n```\n' });
+      const html = await vscode.commands.executeCommand<string>('markdown.api.render', document);
+      assert.ok(!html.includes('incontext-diagram-links'), html);
+    });
+  });
+
   suite('AI assistant instructions', () => {
     const fixtures = () => path.dirname(folder('alpha'));
     const all = ['claude', 'copilot', 'codex'];
