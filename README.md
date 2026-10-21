@@ -52,6 +52,7 @@
 - Hover a reference in the preview to peek at the referenced lines (or a folder's contents), like the hover in the editor.
 - Give a reference its own label with a markdown link: `[the parser](@project/src/file.ts#L10-L20)`.
 - Plain relative markdown links get line ranges too: `[the parser](../src/file.ts#L10-L20)`.
+- In Mermaid diagrams (drawn by a Mermaid preview extension), a box whose `click` line links to a reference opens it the same way, beside the preview: `click A "@project/src/file.ts:L10:20"`, or a link-server link such as `click A "http://localhost:46266/open#@project/src/file.ts:L10:20"`. A sequence diagram's `link` lines work too, with the `#` written as `#35;`. References written in a diagram's labels stay text.
 - The first click may ask *Allow 'Code Reference Extension' extension to open this URI?* — tick **Do not ask me again**.
 
 ### Terminal
@@ -140,6 +141,10 @@ Run **InContext: Set Up AI Assistant Instructions** from the Command Palette. It
 ---
 
 ## 📝 Changelog
+
+- **1.4.0**
+  - Mermaid diagrams in the Markdown preview: a box whose `click` line links to a reference (the bare reference, or a link-server link) opens it beside the preview like any other reference, and in a new split on <kbd>Cmd</kbd>+click. Before, a click opened an unsigned link over the preview, and a double-click switched to the editor
+  - **InContext Links**, a companion plugin for Obsidian: references in notes and Mermaid diagrams open in VS Code with the lines selected. Install it with BRAT (`managea/incontext`) or from this release's files; see [Obsidian](#obsidian)
 
 - **1.3.1**
   - The AI assistant instruction covers files too: in Markdown files and code comments, AI tools write the plain reference, which incontext makes clickable, instead of a Markdown link, and keep its line numbers up to date. Run **InContext: Set Up AI Assistant Instructions** again to update what it wrote
