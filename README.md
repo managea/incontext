@@ -18,7 +18,7 @@
 - **Clickable in Markdown Preview:** References in your markdown become links in VS Code's Markdown preview — no changes to the markdown needed.
 - **Clickable in the terminal and in AI replies:** References printed in VS Code's terminal open with a click, and GitHub Copilot and Claude Code can be told to cite code as references that open the same way.
 - **Clickable in desktop chat apps:** In the Claude, ChatGPT/Codex and GitHub Copilot apps, AI replies can cite code as links that open in VS Code with the lines selected.
-- **Clickable in Obsidian:** A companion Obsidian plugin makes references in your notes and Mermaid diagrams open in VS Code with the lines selected.
+- **Clickable in Obsidian:** A companion Obsidian plugin, installed with one command, makes references in your notes and Mermaid diagrams open in VS Code with the lines selected.
 - **One instruction for every AI tool:** A command installs the instruction that makes Claude Code, GitHub Copilot and Codex cite code this way.
 - **Keyboard Shortcuts:** Use <kbd>Cmd</kbd>+<kbd>'</kbd> to copy references quickly.
 - **No intrusive popups:** All feedback is inline and non-blocking.
@@ -122,7 +122,10 @@ Run **InContext: Set Up AI Assistant Instructions** from the Command Palette. It
 
 - The **InContext Links** plugin for Obsidian makes references in your notes, such as `@incontext/src/extension.ts:L45:83`, clickable in the editor and in Reading view. A click opens the reference in VS Code with the lines selected.
 - Mermaid diagrams in Obsidian can't link to `vscode://` addresses, so a box's `click` line links to the link server instead, such as `click A "http://localhost:46266/open#@incontext/src/extension.ts:L45:83"`. The plugin opens those links in VS Code directly, without going through your browser.
-- Install it with [BRAT](https://github.com/TfTHacker/obsidian42-brat): install BRAT from Obsidian's community plugins, run **BRAT: Add a beta plugin for testing**, enter `managea/incontext`, then turn on **InContext Links**. BRAT keeps it up to date.
+- Install it from VS Code: run **InContext: Install Obsidian Plugin** from the Command Palette and pick your vaults. It lists the vaults Obsidian knows, or you can choose vault folders. It copies the plugin incontext ships into `<vault>/.obsidian/plugins/incontext-links/` and turns it on there.
+  - Obsidian loads the plugin the next time it opens the vault. For a vault it has open, run **Reload app without saving** from Obsidian's command palette.
+  - Run the command again after updating incontext, to update the plugin too. **InContext: Remove Obsidian Plugin** takes it out again.
+- Or install it with [BRAT](https://github.com/TfTHacker/obsidian42-brat), which keeps it up to date: install BRAT from Obsidian's community plugins, run **BRAT: Add a beta plugin for testing**, enter `managea/incontext`, then turn on **InContext Links**.
 - Or install it by hand: download `main.js`, `manifest.json` and `styles.css` from the latest [GitHub release](https://github.com/managea/incontext/releases) into `<vault>/.obsidian/plugins/incontext-links/`. Then, under **Settings → Community plugins**, press the refresh button next to **Installed plugins** and turn on **InContext Links**.
 - Good to know:
   - The first click asks whether to open `vscode://` links. Tick **Always open vscode:// links** so it doesn't ask again.

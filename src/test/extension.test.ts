@@ -9,6 +9,8 @@ import { ReferenceParser } from '../ReferenceParser';
 import { WindowEndpoint, WindowRegistry } from '../LinkWindows';
 import { AiInstructions } from '../AiInstructions';
 import { AiInstructionsResult } from '../AiInstructionsCommands';
+import { ObsidianPlugin } from '../ObsidianPlugin';
+import { ObsidianPluginResult } from '../ObsidianPluginCommands';
 import { launch, request } from './http';
 
 // Runs in the workspace .vscode-test.mjs sets up: folders alpha and beta, with ../outside next to them,
@@ -383,6 +385,40 @@ suite('Extension', () => {
       assert.strictEqual(read(codex.file), '# My Codex rules\n\nBe brief.\n');
       assert.strictEqual(read(path.join(os.homedir(), '.claude', 'CLAUDE.md')), '# My Claude rules\n');
       assert.deepStrictEqual(await run('incontext.removeAiInstructions', all), []);
+    });
+  });
+
+  suite('Obsidian plugin', () => {
+    let vault: string;
+    const run = (command: string, vaults: string[]) => vscode.commands.executeCommand<ObsidianPluginResult[]>(command, { vaults });
+    const outcomes = (results: ObsidianPluginResult[]) => results.map(result => `${path.basename(result.vault)}: ${result.outcome}`);
+    const enabled = () => JSON.parse(fs.readFileSync(path.join(vault, '.obsidian', 'community-plugins.json'), 'utf8'));
+
+    setup(() => {
+      vault = path.join(path.dirname(folder('alpha')), 'vault');
+      fs.rmSync(vault, { recursive: true, force: true });
+      fs.mkdirSync(path.join(vault, '.obsidian'), { recursive: true });
+      fs.writeFileSync(path.join(vault, '.obsidian', 'community-plugins.json'), JSON.stringify(['calendar'], null, 2));
+    });
+
+    test('install copies the plugin the extension ships into the vault and turns it on', async () => {
+      assert.deepStrictEqual(outcomes(await run('incontext.installObsidianPlugin', [vault, folder('beta')])), ['vault: installed', 'beta: not a vault']);
+      const shipped = vscode.Uri.joinPath(vscode.extensions.getExtension('managea.incontext')!.extensionUri, 'dist', 'obsidian').fsPath;
+      for (const file of ObsidianPlugin.FILES) {
+        assert.ok(fs.readFileSync(path.join(ObsidianPlugin.pluginFolder(vault), file)).equals(fs.readFileSync(path.join(shipped, file))), file);
+      }
+      assert.deepStrictEqual(enabled(), ['calendar', ObsidianPlugin.ID]);
+      assert.ok(!fs.existsSync(path.join(folder('beta'), '.obsidian')));
+
+      assert.deepStrictEqual(outcomes(await run('incontext.installObsidianPlugin', [vault])), ['vault: unchanged']);
+    });
+
+    test('remove takes out only the plugin', async () => {
+      await run('incontext.installObsidianPlugin', [vault]);
+      assert.deepStrictEqual(outcomes(await run('incontext.removeObsidianPlugin', [vault])), ['vault: removed']);
+      assert.ok(!fs.existsSync(ObsidianPlugin.pluginFolder(vault)));
+      assert.deepStrictEqual(enabled(), ['calendar']);
+      assert.deepStrictEqual(outcomes(await run('incontext.removeObsidianPlugin', [vault])), ['vault: absent']);
     });
   });
 });

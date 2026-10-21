@@ -106,4 +106,4 @@ jobs:
         run: |
           gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1 \
             || gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes "See the Changelog in the README."
-          gh release upload "$GITHUB_REF_NAME" obsidian/dist/main.js obsidian/dist/manifest.json obsidian/dist/styles.css --clobber
+          gh release upload "$GITHUB_REF_NAME" dist/obsidian/main.js dist/obsidian/manifest.json dist/obsidian/styles.css --clobber

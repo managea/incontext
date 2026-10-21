@@ -2,9 +2,9 @@ const esbuild = require('esbuild');
 const fs = require('fs');
 const path = require('path');
 
-// Builds the Obsidian plugin into obsidian/dist: main.js, styles.css, and manifest.json with the extension's version,
-// so each release of the extension carries the plugin with the same version.
-const dist = path.join(__dirname, 'dist');
+// Builds the Obsidian plugin into dist/obsidian: main.js, styles.css, and manifest.json with the extension's version.
+// The extension ships it there for "InContext: Install Obsidian Plugin", and each release attaches it for BRAT.
+const dist = path.join(__dirname, '..', 'dist', 'obsidian');
 
 async function main() {
 	fs.mkdirSync(dist, { recursive: true });

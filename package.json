@@ -90,6 +90,16 @@
         "command": "incontext.removeAiInstructions",
         "title": "Remove AI Assistant Instructions",
         "category": "InContext"
+      },
+      {
+        "command": "incontext.installObsidianPlugin",
+        "title": "Install Obsidian Plugin",
+        "category": "InContext"
+      },
+      {
+        "command": "incontext.removeObsidianPlugin",
+        "title": "Remove Obsidian Plugin",
+        "category": "InContext"
       }
     ],
     "keybindings": [
@@ -144,11 +154,11 @@
   },
   "scripts": {
     "vscode:prepublish": "npm run package",
-    "compile": "npm run check-types && npm run lint && node esbuild.js",
+    "compile": "npm run check-types && npm run lint && node esbuild.js && npm run build:obsidian",
     "watch": "npm-run-all -p watch:*",
     "watch:esbuild": "node esbuild.js --watch",
     "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
-    "package": "npm run check-types && npm run lint && node esbuild.js --production",
+    "package": "npm run check-types && npm run lint && node esbuild.js --production && npm run build:obsidian",
     "package-extension": "vsce package",
     "build:obsidian": "tsc --noEmit -p obsidian && eslint obsidian && node obsidian/esbuild.js",
     "compile-tests": "tsc -p . --outDir out",

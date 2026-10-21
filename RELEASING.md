@@ -4,7 +4,7 @@ Releases are published by GitHub Actions ([`.github/workflows/publish.yml`](.git
 
 - **Visual Studio Marketplace** (VS Code), signed in as an Azure managed identity. No token is stored anywhere, so nothing expires.
 - **Open VSX** (Cursor and other VS Code forks), with trusted publishing. No token is stored here either. This step is off until the `managea` namespace claim is approved and the trusted publisher is registered; then turn it on by setting `OPEN_VSX_ENABLED` to `true` (see the table below).
-- **GitHub Releases**: once the extension is published, the `obsidian` job builds the Obsidian plugin ([`obsidian/`](obsidian/)) and attaches its `main.js`, `manifest.json` and `styles.css` to a GitHub release for the tag, creating the release if needed. BRAT and manual installs get the plugin from there. Its version is the extension's version from `package.json`.
+- **GitHub Releases**: once the extension is published, the `obsidian` job builds the Obsidian plugin ([`obsidian/`](obsidian/)) and attaches its `main.js`, `manifest.json` and `styles.css` to a GitHub release for the tag, creating the release if needed. BRAT and manual installs get the plugin from there. Its version is the extension's version from `package.json`. The extension ships the same build in `dist/obsidian`, for **InContext: Install Obsidian Plugin**.
 
 ## Release a new version
 
@@ -49,14 +49,14 @@ code --install-extension incontext-<version>.vsix --force
 
 Then run **Developer: Reload Window** in VS Code. A `.vsix` install doesn't auto-update, so switch back to the Marketplace version afterwards (command above).
 
-For the Obsidian plugin, build it into `obsidian/dist` and copy that into a vault:
+The `.vsix` carries the Obsidian plugin too, so **InContext: Install Obsidian Plugin** in that VS Code installs the new build into a vault. To try only the plugin, build it into `dist/obsidian` and copy that into a vault:
 
 ```bash
 npm run build:obsidian
-cp obsidian/dist/* <vault>/.obsidian/plugins/incontext-links/
+cp dist/obsidian/* <vault>/.obsidian/plugins/incontext-links/
 ```
 
-Then, in Obsidian under **Settings → Community plugins**, turn **InContext Links** off and on again to load the new build (press the refresh button next to **Installed plugins** the first time).
+Then run **Reload app without saving** from Obsidian's command palette to load the new build (the first time, turn **InContext Links** on under **Settings → Community plugins** too).
 
 ## How publishing is set up
 

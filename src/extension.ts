@@ -25,6 +25,7 @@ import { Logger } from './Logger';
 import { LinkServer } from './LinkServer';
 import { LinkService } from './LinkService';
 import { AiInstructionsCommands } from './AiInstructionsCommands';
+import { ObsidianPluginCommands } from './ObsidianPluginCommands';
 
 
 
@@ -437,6 +438,9 @@ export function activate(context: vscode.ExtensionContext) {
 
   // Install the instruction that makes Claude Code, Copilot and Codex cite code as incontext links
   context.subscriptions.push(...AiInstructionsCommands.register(context));
+
+  // Install the companion Obsidian plugin, which opens references in notes here
+  context.subscriptions.push(...ObsidianPluginCommands.register(context));
 
   // Make @project/path:L34:43 references printed in the integrated terminal (Copilot CLI, scripts, ...) clickable
   const terminalLinks: vscode.TerminalLinkProvider<TerminalReferenceLink> = {
