@@ -196,7 +196,7 @@ Good to know:
 
 ## 📝 Changelog
 
-- **Unreleased**
+- **1.6.0**
   - AI assistants can write notes on code: the instruction **InContext: Set Up AI Assistant Instructions** installs tells them how, in your notes folder, such as to map a flow when you ask. Run the command again to update the instruction, and again after changing the notes folder (incontext offers to)
   - Notes on code: annotate lines with Markdown notes and references, kept outside your repositories (or in a project, to commit them), shown under their lines in a box. The lines a note points to link back to it, and can get notes of their own, so a flow reads as a chain. **Move to selection** moves a note or corrects a drifted reference. See [Notes on code](#notes-on-code)
   - Drawings: **Copy Reference as Link (for Drawings)** copies a reference as a `vscode://` link for an Excalidraw box. A click opens the code beside the drawing, reusing one split, with no browser in between. Links from outside VS Code open beside any drawing or preview that is the active tab, rather than covering it. See [Drawings](#drawings-excalidraw)

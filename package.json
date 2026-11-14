@@ -3,7 +3,7 @@
   "displayName": "Code Reference Extension",
   "description": "Prompt the right way. Structure your AI prompts naturally, with inline, pinpoint-accurate code references — delivering better LLM outputs, preserving your visual context, and enabling logical, easy-to-read prompts.",
   "publisher": "managea",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "icon": "icon.png",
   "license": "MIT",
   "repository": {
@@ -209,28 +209,83 @@
     "views": {},
     "menus": {
       "commandPalette": [
-        { "command": "incontext.notes.create", "when": "false" },
-        { "command": "incontext.notes.cancelDraft", "when": "false" },
-        { "command": "incontext.notes.edit", "when": "false" },
-        { "command": "incontext.notes.save", "when": "false" },
-        { "command": "incontext.notes.cancelEdit", "when": "false" },
-        { "command": "incontext.notes.delete", "when": "false" },
-        { "command": "incontext.notes.openMarkdown", "when": "false" },
-        { "command": "incontext.notes.cancelFocused", "when": "false" },
-        { "command": "incontext.notes.submitFocused", "when": "false" }
+        {
+          "command": "incontext.notes.create",
+          "when": "false"
+        },
+        {
+          "command": "incontext.notes.cancelDraft",
+          "when": "false"
+        },
+        {
+          "command": "incontext.notes.edit",
+          "when": "false"
+        },
+        {
+          "command": "incontext.notes.save",
+          "when": "false"
+        },
+        {
+          "command": "incontext.notes.cancelEdit",
+          "when": "false"
+        },
+        {
+          "command": "incontext.notes.delete",
+          "when": "false"
+        },
+        {
+          "command": "incontext.notes.openMarkdown",
+          "when": "false"
+        },
+        {
+          "command": "incontext.notes.cancelFocused",
+          "when": "false"
+        },
+        {
+          "command": "incontext.notes.submitFocused",
+          "when": "false"
+        }
       ],
       "comments/commentThread/context": [
-        { "command": "incontext.notes.create", "group": "inline@1", "when": "commentController == incontext.notes && commentThreadIsEmpty" },
-        { "command": "incontext.notes.cancelDraft", "group": "inline@2", "when": "commentController == incontext.notes && commentThreadIsEmpty" }
+        {
+          "command": "incontext.notes.create",
+          "group": "inline@1",
+          "when": "commentController == incontext.notes && commentThreadIsEmpty"
+        },
+        {
+          "command": "incontext.notes.cancelDraft",
+          "group": "inline@2",
+          "when": "commentController == incontext.notes && commentThreadIsEmpty"
+        }
       ],
       "comments/commentThread/title": [
-        { "command": "incontext.notes.edit", "group": "inline", "when": "commentController == incontext.notes && commentThread =~ /^incontext\\.(note|backlinks)$/" },
-        { "command": "incontext.notes.openMarkdown", "group": "inline", "when": "commentController == incontext.notes && commentThread == incontext.note" },
-        { "command": "incontext.notes.delete", "group": "inline", "when": "commentController == incontext.notes && commentThread == incontext.note" }
+        {
+          "command": "incontext.notes.edit",
+          "group": "inline",
+          "when": "commentController == incontext.notes && commentThread =~ /^incontext\\.(note|backlinks)$/"
+        },
+        {
+          "command": "incontext.notes.openMarkdown",
+          "group": "inline",
+          "when": "commentController == incontext.notes && commentThread == incontext.note"
+        },
+        {
+          "command": "incontext.notes.delete",
+          "group": "inline",
+          "when": "commentController == incontext.notes && commentThread == incontext.note"
+        }
       ],
       "comments/comment/context": [
-        { "command": "incontext.notes.save", "group": "inline@1", "when": "commentController == incontext.notes && comment == incontext.note" },
-        { "command": "incontext.notes.cancelEdit", "group": "inline@2", "when": "commentController == incontext.notes && comment == incontext.note" }
+        {
+          "command": "incontext.notes.save",
+          "group": "inline@1",
+          "when": "commentController == incontext.notes && comment == incontext.note"
+        },
+        {
+          "command": "incontext.notes.cancelEdit",
+          "group": "inline@2",
+          "when": "commentController == incontext.notes && comment == incontext.note"
+        }
       ],
       "editor/context": [
         {
