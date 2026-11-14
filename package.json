@@ -55,6 +55,12 @@
           "maximum": 65535,
           "scope": "application",
           "markdownDescription": "Port of the link server (`#incontext.linkServer.enabled#`). All VS Code windows share it: the first window to start answers links and passes each one on to the window that has the reference's folder."
+        },
+        "incontext.notes.folder": {
+          "type": "string",
+          "default": "",
+          "scope": "machine-overridable",
+          "markdownDescription": "Folder for your notes on code (**InContext: Add Note**). In your user settings, keep it outside your repositories, so notes are never committed: each source file's notes are a Markdown file at `<folder>/<project>/<path in the project>.md`, and a synced folder shares them between machines. To keep a project's notes inside it and commit them, set a relative folder such as `.notes` in the project's own settings (`.vscode/settings.json`): its notes are then at `<project>/.notes/<path in the project>.md`. `~` is your home folder."
         }
       }
     },
@@ -76,6 +82,54 @@
       {
         "command": "incontext.copyDirectoryReference",
         "title": "Copy Directory Reference to Clipboard"
+      },
+      {
+        "command": "incontext.copyReferenceAsLink",
+        "title": "Copy Reference as Link (for Drawings)"
+      },
+      {
+        "command": "incontext.addNote",
+        "title": "Add Note",
+        "category": "InContext"
+      },
+      {
+        "command": "incontext.notes.create",
+        "title": "Save Note"
+      },
+      {
+        "command": "incontext.notes.cancelDraft",
+        "title": "Cancel"
+      },
+      {
+        "command": "incontext.notes.edit",
+        "title": "Edit Note",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "incontext.notes.save",
+        "title": "Save"
+      },
+      {
+        "command": "incontext.notes.cancelEdit",
+        "title": "Cancel"
+      },
+      {
+        "command": "incontext.notes.delete",
+        "title": "Delete Note",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "incontext.notes.openMarkdown",
+        "title": "Open as Markdown",
+        "icon": "$(go-to-file)"
+      },
+      {
+        "command": "incontext.notes.cancelFocused",
+        "title": "Cancel Note Edit"
+      },
+      {
+        "command": "incontext.notes.submitFocused",
+        "title": "Save Note Edit"
       },
       {
         "command": "incontext.openReference",
@@ -126,15 +180,70 @@
         "key": "cmd+'",
         "mac": "cmd+'",
         "when": "filesExplorerFocus && explorerResourceIsFolder && resourceSet"
+      },
+      {
+        "command": "incontext.copyReferenceAsLink",
+        "key": "ctrl+alt+'",
+        "mac": "cmd+alt+'",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "incontext.addNote",
+        "key": "ctrl+alt+n",
+        "mac": "cmd+alt+n",
+        "when": "editorTextFocus && !commentEditorFocused"
+      },
+      {
+        "command": "incontext.notes.cancelFocused",
+        "key": "escape",
+        "when": "commentEditorFocused && commentController == incontext.notes"
+      },
+      {
+        "command": "incontext.notes.submitFocused",
+        "key": "ctrl+enter",
+        "mac": "cmd+enter",
+        "when": "commentEditorFocused && commentController == incontext.notes"
       }
     ],
     "viewsContainers": {},
     "views": {},
     "menus": {
+      "commandPalette": [
+        { "command": "incontext.notes.create", "when": "false" },
+        { "command": "incontext.notes.cancelDraft", "when": "false" },
+        { "command": "incontext.notes.edit", "when": "false" },
+        { "command": "incontext.notes.save", "when": "false" },
+        { "command": "incontext.notes.cancelEdit", "when": "false" },
+        { "command": "incontext.notes.delete", "when": "false" },
+        { "command": "incontext.notes.openMarkdown", "when": "false" },
+        { "command": "incontext.notes.cancelFocused", "when": "false" },
+        { "command": "incontext.notes.submitFocused", "when": "false" }
+      ],
+      "comments/commentThread/context": [
+        { "command": "incontext.notes.create", "group": "inline@1", "when": "commentController == incontext.notes && commentThreadIsEmpty" },
+        { "command": "incontext.notes.cancelDraft", "group": "inline@2", "when": "commentController == incontext.notes && commentThreadIsEmpty" }
+      ],
+      "comments/commentThread/title": [
+        { "command": "incontext.notes.edit", "group": "inline", "when": "commentController == incontext.notes && commentThread =~ /^incontext\\.(note|backlinks)$/" },
+        { "command": "incontext.notes.openMarkdown", "group": "inline", "when": "commentController == incontext.notes && commentThread == incontext.note" },
+        { "command": "incontext.notes.delete", "group": "inline", "when": "commentController == incontext.notes && commentThread == incontext.note" }
+      ],
+      "comments/comment/context": [
+        { "command": "incontext.notes.save", "group": "inline@1", "when": "commentController == incontext.notes && comment == incontext.note" },
+        { "command": "incontext.notes.cancelEdit", "group": "inline@2", "when": "commentController == incontext.notes && comment == incontext.note" }
+      ],
       "editor/context": [
         {
           "when": "editorHasSelection",
           "command": "incontext.copyCodeReference",
+          "group": "navigation"
+        },
+        {
+          "command": "incontext.copyReferenceAsLink",
+          "group": "navigation"
+        },
+        {
+          "command": "incontext.addNote",
           "group": "navigation"
         }
       ],
@@ -147,6 +256,10 @@
         {
           "command": "incontext.copyDirectoryReference",
           "when": "explorerResourceIsFolder",
+          "group": "navigation"
+        },
+        {
+          "command": "incontext.copyReferenceAsLink",
           "group": "navigation"
         }
       ]

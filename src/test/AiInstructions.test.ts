@@ -55,6 +55,15 @@ suite('AiInstructions', () => {
     assert.ok(text.includes('In a file you create or edit (Markdown, code comments)') && text.includes('never inside a Markdown link'));
   });
 
+  test('render names the notes folder, or says to ask for one, so AI tools can write notes on code', () => {
+    assert.ok(template().includes('{{NOTES_FOLDER}}'));
+    const withFolder = AiInstructions.render(template(), 46266, 'vscode', '/Users/me/Notes');
+    assert.ok(withFolder.includes('The notes folder is `/Users/me/Notes` (`incontext.notes.folder` in VS Code\'s user settings).'), withFolder);
+    assert.ok(withFolder.includes('`## L<line>: <that line\'s text, trimmed>`') && withFolder.includes('To map a flow, start at its entry point'));
+    const unset = AiInstructions.render(template(), 46266, 'vscode');
+    assert.ok(!unset.includes('{{') && unset.includes('ask the user where to keep notes'));
+  });
+
   test('the README shows the template, with the default port', () => {
     const readme = read(path.join(ROOT, 'README.md'));
     assert.strictEqual(AiInstructions.readmeCopy(readme), AiInstructions.readmeBlock(ROOT), 'README.md is out of date: run npm run sync-readme');

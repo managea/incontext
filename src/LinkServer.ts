@@ -15,7 +15,8 @@ export interface LinkPage {
  * GET /open serves a page whose script (media/link-page.js) posts the reference in the fragment to POST /launch,
  * so the reference never reaches the server in a URL. Only that page can call /launch (see LinkRequest.checkLaunch).
  * The Claude desktop app opens localhost links in its own Browser pane, which can't open vscode:// links, so the
- * page asks this server instead, and VS Code opens the reference without coming to the front.
+ * page asks this server instead, and VS Code opens the reference without coming to the front. In a browser tab,
+ * such as for a link in a drawing, the page asks VS Code to come to the front too (LaunchRequest.focus).
  */
 export class LinkServer {
   static readonly PAGE_PATH = '/open';
@@ -92,7 +93,7 @@ export class LinkServer {
         return LinkServer.send(response, { status: 413, message: 'Request too large' });
       }
       const checked = LinkRequest.checkLaunch(this.port, request.headers, body);
-      return LinkServer.send(response, 'reference' in checked ? await this.launch(checked.reference) : checked);
+      return LinkServer.send(response, 'reference' in checked ? await this.launch(checked) : checked);
     }
     return LinkServer.send(response, { status: 404, message: 'Not found' });
   }

@@ -63,9 +63,15 @@ export class AiInstructions {
     return fs.readFileSync(path.join(mediaFolder, 'ai-instructions.md'), 'utf8');
   }
 
-  /** The instruction for links to the link server on `port`, opening in the VS Code whose URI scheme is `uriScheme`. */
-  static render(template: string, port: number, uriScheme: string): string {
-    return template.replace(/\{\{PORT\}\}/g, String(port)).replace(/\{\{URI_SCHEME\}\}/g, uriScheme).trimEnd();
+  /**
+   * The instruction for links to the link server on `port`, opening in the VS Code whose URI scheme is `uriScheme`,
+   * and for notes in `notesFolder` (the folder in the user's settings; undefined while it isn't set).
+   */
+  static render(template: string, port: number, uriScheme: string, notesFolder?: string): string {
+    const folder = notesFolder
+      ? `\`${notesFolder}\` (\`incontext.notes.folder\` in VS Code's user settings)`
+      : '`incontext.notes.folder` in VS Code\'s user settings; if it isn\'t set, ask the user where to keep notes';
+    return template.replace(/\{\{PORT\}\}/g, String(port)).replace(/\{\{URI_SCHEME\}\}/g, uriScheme).replace(/\{\{NOTES_FOLDER\}\}/g, folder).trimEnd();
   }
 
   static block(instructions: string): string {

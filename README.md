@@ -18,8 +18,10 @@
 - **Clickable in Markdown Preview:** References in your markdown become links in VS Code's Markdown preview — no changes to the markdown needed.
 - **Clickable in the terminal and in AI replies:** References printed in VS Code's terminal open with a click, and GitHub Copilot and Claude Code can be told to cite code as references that open the same way.
 - **Clickable in desktop chat apps:** In the Claude, ChatGPT/Codex and GitHub Copilot apps, AI replies can cite code as links that open in VS Code with the lines selected.
+- **Private notes on code:** Annotate lines, such as a Lambda handler, with Markdown notes that link to the templates that define and invoke it. Notes live outside your repositories (or in a project, to commit them), show under their lines, and the places they point to link back, so you can follow a flow as a chain.
+- **Clickable in drawings:** Excalidraw drawings in VS Code link their boxes to code with **Copy Reference as Link**; a click opens the code beside the drawing, with no browser in between.
 - **Clickable in Obsidian:** A companion Obsidian plugin, installed with one command, makes references in your notes and Mermaid diagrams open in VS Code with the lines selected.
-- **One instruction for every AI tool:** A command installs the instruction that makes Claude Code, GitHub Copilot and Codex cite code this way.
+- **One instruction for every AI tool:** A command installs the instruction that makes Claude Code, GitHub Copilot and Codex cite code this way, and write notes on code when you ask.
 - **Keyboard Shortcuts:** Use <kbd>Cmd</kbd>+<kbd>'</kbd> to copy references quickly.
 - **No intrusive popups:** All feedback is inline and non-blocking.
 
@@ -86,12 +88,22 @@
   - Don't put a reference or link in backticks or a code block, and only cite lines you have read.
 
   Example in a reply: openReference is at [@incontext/src/extension.ts:L36:68](http://localhost:46266/open#@incontext/src/extension.ts:L36:68), or inside VS Code or a terminal [@incontext/src/extension.ts:L36:68](vscode://managea.incontext/@incontext/src/extension.ts:L36:68).
+
+  ## Notes on code
+
+  The incontext extension shows notes on code in VS Code: Markdown notes on lines of a workspace file, kept outside the code, with references to the places they connect. Add notes only when the user asks for them, for a task or as you code, such as to map or explain a flow.
+
+  - The notes folder is `incontext.notes.folder` in VS Code's user settings; if it isn't set, ask the user where to keep notes. A project can set `incontext.notes.folder` in its own `.vscode/settings.json` to a relative folder, such as `.notes`, to keep its notes in that folder inside the project.
+  - The notes on a file are in `<notes folder>/<folder>/<path>.md` (or `<project>/<relative folder>/<path>.md` for a project's own folder), with <folder> and <path> as in references. If the file doesn't exist, create it with the first line `# Notes on @<folder>/<path>`.
+  - Each note is a section: a heading `## L<line>: <that line's text, trimmed>`, or `## L<start>-L<end>: <the first line's text, trimmed>` for several lines, then the note in Markdown. Copy the line's text exactly: incontext finds the note's lines by it when the code moves. Add your notes to a file's notes; don't change notes you didn't write.
+  - In a note, refer to the places it connects with plain references, such as @incontext/src/extension.ts:L36:68. Each place a note points to shows a back-link to the note in VS Code.
+  - To map a flow, start at its entry point and follow it: one note on each step's lines (a handler, the template that defines it, the API that calls it, the table it reads), saying what the step does, with a reference to the next step. The back-links then chain the flow both ways.
   ```
   <!-- ai-instructions:end -->
 
 ### Use one instruction in every AI tool
 
-Run **InContext: Set Up AI Assistant Instructions** from the Command Palette. It shows the files below, lets you pick the tools, and writes the instruction with your link server's port. Nothing else in those folders changes.
+Run **InContext: Set Up AI Assistant Instructions** from the Command Palette. It shows the files below, lets you pick the tools, and writes the instruction with your link server's port and your notes folder. Nothing else in those folders changes.
 
 | Tool | What the command writes | Where the tool reads your instructions |
 | --- | --- | --- |
@@ -106,17 +118,56 @@ Run **InContext: Set Up AI Assistant Instructions** from the Command Palette. It
 
 ### Desktop chat apps: Claude, ChatGPT/Codex and GitHub Copilot
 
-- These apps don't open `vscode://` links, but they do open `http://localhost` links. So the extension runs a small link server on your machine, and a link such as `http://localhost:46266/open#@incontext/src/extension.ts:L392:394` opens that reference in VS Code's editor with the lines selected (or a whole file, or reveals a folder in the Explorer). VS Code doesn't come to the front, so you stay in the app.
+- These apps don't open `vscode://` links, but they do open `http://localhost` links. So the extension runs a small link server on your machine, and a link such as `http://localhost:46266/open#@incontext/src/extension.ts:L392:394` opens that reference in VS Code's editor with the lines selected (or a whole file, or reveals a folder in the Explorer). In the Claude app's Browser pane, VS Code doesn't come to the front, so you stay in the app.
+- The same links work anywhere you can put a link, such as a drawing opened in a browser (for drawings in VS Code, see [Drawings](#drawings-excalidraw)). When one opens in a browser tab, the VS Code window that opened the reference comes to the front, ahead of the browser, and the tab closes itself.
+  - The first time, VS Code asks *Allow 'Code Reference Extension' extension to open this URI?* before it comes to the front, and the question waits behind your browser. Switch to VS Code, tick **Do not ask me again for this extension** and choose **Open**. If you have already allowed it for Markdown preview links, VS Code doesn't ask.
 - Good to know:
   - Tested on macOS, with the Claude, ChatGPT/Codex and GitHub Copilot apps. Windows and Linux should work too, but haven't been tried yet.
   - VS Code must be running with the reference's folder open. Without VS Code, the click shows a page saying it can't connect.
-  - In the Claude app, use a plain click. <kbd>Cmd</kbd>+click opens the link in your default browser instead, which comes to the front; its tab closes itself once VS Code has the reference.
-  - In the ChatGPT/Codex app, the link opens in the app's browser, and that page closes itself once VS Code has the reference.
-  - In the GitHub Copilot app, the link opens in the app's own browser.
-  - Links open files inside your workspace folders only. The server listens on 127.0.0.1 only and never sends file contents back. Any web page could link to it too, but the most such a link can do is open a file of your workspace in VS Code.
+  - In the Claude app, use a plain click. <kbd>Cmd</kbd>+click opens the link in your default browser instead, so VS Code comes to the front as from any browser tab.
+  - In the ChatGPT/Codex app, the link opens in the app's browser, and that page closes itself once VS Code has the reference. Only the Claude app's pane keeps VS Code behind, so VS Code comes to the front here, as from a browser tab.
+  - In the GitHub Copilot app, the link opens in the app's own browser, and VS Code comes to the front, as from a browser tab.
+  - Links open files inside your workspace folders only. The server listens on 127.0.0.1 only and never sends file contents back. Any web page could link to it too, but the most such a link can do is open a file of your workspace in VS Code and bring VS Code to the front.
   - With several VS Code windows open, the first window to start answers the links and passes each one on to the window that has the reference's folder (the most recently focused one if several have it). When that window closes, another one takes over within a few seconds. The **InContext** channel in the Output panel shows what the link server is doing.
   - The port is 46266 unless you change the `incontext.linkServer.port` setting; incontext then offers to update the AI assistant instructions it wrote. Turn the server off with `incontext.linkServer.enabled`.
   - Remote windows (SSH, containers, WSL) don't run the link server.
+
+### Notes on code
+
+Link places in your code base without changing it, such as a Lambda handler and the templates that define and invoke it. A note shows under its lines, rendered as Markdown, with each reference a click away:
+
+![A note under a Lambda handler, with links to the template that defines it and the API that calls it](media/notes-note.png)
+
+- **Add a note:** click the **+** beside a line (as for a review comment), or put the cursor on the line, or select several lines, and press <kbd>Cmd</kbd>+<kbd>Alt</kbd>+<kbd>N</kbd> (**InContext: Add Note**, also in the editor's context menu). Type the note in Markdown, pasting references copied with <kbd>Cmd</kbd>+<kbd>'</kbd>, and press <kbd>Cmd</kbd>+<kbd>Enter</kbd>. The first time, choose a folder for your notes, outside your repositories so they are never committed.
+- **Read it:** a click on a reference opens it beside the code. Hovering over the line shows the note too, also when you have closed its box.
+- **Change it:** under each box, **Lines 11–25** selects the lines it covers, **Move to selection** moves it to the lines you have selected (how a note moves up or down, or covers other lines), and **Edit**, **Open as Markdown** and **Delete** do what they say. <kbd>Cmd</kbd>+<kbd>Alt</kbd>+<kbd>N</kbd> on the line edits it too; <kbd>Cmd</kbd>+<kbd>Enter</kbd> saves and <kbd>Esc</kbd> cancels.
+
+**Back-links** lead the other way. The lines a note points to show `← Note on handler.ts:L7`, with the note quoted, a click back to it. They join the note's box when those lines have a note of their own, and otherwise get a box of their own with **Add note**, so a note there can point on, and you can follow a flow as a chain:
+
+![The template shows the handler's note as a back-link, its own note pointing on to the orders table, and the table's back-link](media/notes-backlinks.png)
+
+- If the lines a note points to have drifted, select the right ones and choose **Move to selection** in the box there: the note's reference is corrected.
+- Back-links are worked out from your notes, never stored.
+
+**Let your AI assistant write them.** The instruction **InContext: Set Up AI Assistant Instructions** installs (see [Use one instruction in every AI tool](#use-one-instruction-in-every-ai-tool)) tells Claude Code, GitHub Copilot and Codex how to write notes, in your notes folder. Ask for them when you want them, for example *"Map the GetOrder flow with notes, from the handler to the table it reads"*, or *"add notes linking the places you change"* as it codes. The notes and their back-links then show the flow in VS Code, step by step.
+
+Good to know:
+
+- Each source file's notes are one Markdown file, at `<notes folder>/<project>/<path in the project>.md`, which you can also edit by hand: each `## L<line>: <the line's text>` heading (`## L11-L25: ...` for lines) starts a note.
+- The notes folder is `incontext.notes.folder` in your user settings; Settings Sync doesn't copy it, so each machine has its own, and a synced folder shares notes between them. To keep a project's notes in the project and commit them with it, set a relative folder in the project's own settings, such as `"incontext.notes.folder": ".notes"` in its `.vscode/settings.json`: its notes are then at `<project>/.notes/<path in the project>.md`.
+- A note follows its lines when code above it changes, by its first line's text. If that text changes, the note stays on its line number; **Move to selection** puts it back.
+- Notes are for files inside your workspace folders. Back-links come from the notes of the projects open in the window, not from references elsewhere in your code.
+- The boxes are VS Code's comment boxes, so VS Code decides their look and the place of their buttons.
+
+### Drawings: Excalidraw
+
+- In an Excalidraw drawing opened in VS Code (the Excalidraw extension), a box can link to code: select the lines, run **Copy Reference as Link (for Drawings)** (<kbd>Cmd</kbd>+<kbd>Alt</kbd>+<kbd>'</kbd>, or the editor's or Explorer's context menu), then paste the link into the box's link field.
+- The link looks like `vscode://managea.incontext/@incontext/src/extension.ts:L45:83`. A click on the box's link icon opens the code beside the drawing with the lines selected, and later clicks reuse that split, as in the Markdown preview. No browser opens.
+- Good to know:
+  - Paste the link, not the bare reference: the Excalidraw extension treats a link without `vscode://` or `http://` as a file next to the drawing, and macOS then says no application can open it.
+  - A `http://localhost:46266/open#@...` link works too, but it goes through your browser first.
+  - Links from outside VS Code (desktop chat apps, `vscode://` links) open beside any drawing or preview that is the active tab, rather than covering it.
+  - These links open files inside your workspace folders only.
 
 ### Obsidian
 
@@ -144,6 +195,12 @@ Run **InContext: Set Up AI Assistant Instructions** from the Command Palette. It
 ---
 
 ## 📝 Changelog
+
+- **Unreleased**
+  - AI assistants can write notes on code: the instruction **InContext: Set Up AI Assistant Instructions** installs tells them how, in your notes folder, such as to map a flow when you ask. Run the command again to update the instruction, and again after changing the notes folder (incontext offers to)
+  - Notes on code: annotate lines with Markdown notes and references, kept outside your repositories (or in a project, to commit them), shown under their lines in a box. The lines a note points to link back to it, and can get notes of their own, so a flow reads as a chain. **Move to selection** moves a note or corrects a drifted reference. See [Notes on code](#notes-on-code)
+  - Drawings: **Copy Reference as Link (for Drawings)** copies a reference as a `vscode://` link for an Excalidraw box. A click opens the code beside the drawing, reusing one split, with no browser in between. Links from outside VS Code open beside any drawing or preview that is the active tab, rather than covering it. See [Drawings](#drawings-excalidraw)
+  - A link-server link opened in a browser tab, such as from a drawing, brings VS Code to the front, ahead of the browser
 
 - **1.5.0**
   - **InContext: Install Obsidian Plugin** installs the InContext Links plugin, which the extension now ships, into the Obsidian vaults you pick, and turns it on. Run it again after updating incontext to update the plugin. **InContext: Remove Obsidian Plugin** takes it out again

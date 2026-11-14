@@ -35,7 +35,7 @@ export function pageHeaders(port: number, overrides: http.OutgoingHttpHeaders = 
   };
 }
 
-/** POSTs a reference to /launch the way the link page does. */
-export function launch(port: number, reference: unknown, overrides: http.OutgoingHttpHeaders = {}): Promise<Response> {
-  return request(port, 'POST', '/launch', pageHeaders(port, overrides), JSON.stringify({ reference }));
+/** POSTs a reference to /launch the way the link page does, with `fields` (such as `focus`) added to the body. */
+export function launch(port: number, reference: unknown, overrides: http.OutgoingHttpHeaders = {}, fields: Record<string, unknown> = {}): Promise<Response> {
+  return request(port, 'POST', '/launch', pageHeaders(port, overrides), JSON.stringify({ reference, ...fields }));
 }

@@ -1,0 +1,414 @@
+import * as vscode from 'vscode';
+import { Note, Notes, NotesProvider } from './Notes';
+import { BackLink, NotesBacklinks } from './NotesBacklinks';
+import { ReferenceUtils } from './ReferenceUtils';
+
+/**
+ * The box at some lines of a file: the note on them, if any, and the notes elsewhere that point at them (back-links),
+ * rendered with clickable references, or the note's raw text while it is edited. A box with only back-links can get a
+ * note of its own (Add note), so notes can chain: a note there points on, and that place shows a back-link again.
+ */
+export class NoteComment implements vscode.Comment {
+  // The thread's title says InContext, so the comment itself has no name
+  readonly author = { name: '' };
+  readonly contextValue = 'incontext.note';
+  mode = vscode.CommentMode.Preview;
+  body: string | vscode.MarkdownString;
+
+  constructor(readonly thread: vscode.CommentThread, readonly note: Note | undefined, readonly backLinks: BackLink[]) {
+    this.body = this.preview();
+  }
+
+  /**
+   * The notes that point here, then the note rendered, then a row of actions at the left: VS Code puts the thread's
+   * own buttons at the far right, which is a long way on a wide editor.
+   */
+  preview(): vscode.MarkdownString {
+    const range = this.thread.range;
+    const target = encodeURIComponent(JSON.stringify([this.thread.uri.toString(), range?.start.line ?? 0]));
+    // The lines the box covers, a link that selects them: VS Code's own marking of them is faint
+    const lines = !range ? 'Lines' : range.end.line > range.start.line ? `Lines ${range.start.line + 1}–${range.end.line + 1}` : `Line ${range.start.line + 1}`;
+    // Plain words: VS Code's comment box doesn't line icons up with the text beside them
+    const actions = this.note
+      ? [[lines, NotesComments.SELECT_AT], ['Move to selection', NotesComments.MOVE_AT], ['Edit', NotesComments.EDIT_AT], ['Open as Markdown', NotesComments.OPEN_AT], ['Delete', NotesComments.DELETE_AT]]
+      : [[lines, NotesComments.SELECT_AT], ['Move to selection', NotesComments.MOVE_AT], ['Add note', NotesComments.EDIT_AT]];
+    const sections = [
+      // Each note that points here, quoted under a link back to it
+      this.backLinks.map(link => {
+        const quote = (link.text || '_Empty note_').split('\n').map(line => `> ${line}`).join('\n');
+        return `[← Note on ${link.source.path.split('/').pop()}:L${link.line}](${NotesBacklinks.goToNoteLink(link)})\n\n${quote}`;
+      }).join('\n\n'),
+      // This box's own note, under the notes that point here
+      this.note ? NotesProvider.linkReferences(this.note.text || '_Empty note_') : '',
+      actions.map(([title, command]) => `[${title}](command:${command}?${target})`).join(' · '),
+    ];
+    const markdown = new vscode.MarkdownString(sections.filter(Boolean).join('\n\n'));
+    markdown.isTrusted = { enabledCommands: [NotesProvider.OPEN_BESIDE, NotesBacklinks.GO_TO_NOTE, ...actions.map(([, command]) => command)] };
+    return markdown;
+  }
+}
+
+/** What the comment box's buttons pass: the thread and the text typed into its box. */
+interface NoteReply {
+  thread: { uri: vscode.Uri; range?: vscode.Range; dispose(): void };
+  text: string;
+}
+
+/**
+ * Shows notes (Notes) inside the editor, as comment threads under their lines, like review comments: one box per
+ * note, with the notes that point at its lines, and a box with only those back-links where no note is. A note is
+ * added by typing into a box (the + beside a line, InContext: Add Note, or Add note in a back-link box) and changed
+ * with Edit; Open as Markdown opens the notes file. Every change is written to the notes file, which stays the only
+ * place notes are kept; back-links are never stored.
+ */
+export class NotesComments implements vscode.Disposable {
+  static readonly NOTE = 'incontext.note';
+  static readonly BACKLINKS = 'incontext.backlinks';
+  static readonly SELECT_AT = 'incontext.notes.selectAt';
+  static readonly MOVE_AT = 'incontext.notes.moveAt';
+  static readonly EDIT_AT = 'incontext.notes.editAt';
+  static readonly OPEN_AT = 'incontext.notes.openAt';
+  static readonly DELETE_AT = 'incontext.notes.deleteAt';
+  private static readonly LABEL = 'InContext';
+  private readonly controller = vscode.comments.createCommentController('incontext.notes', NotesComments.LABEL);
+  /** The boxes shown in each file, by the file's URI. */
+  private readonly threads = new Map<string, vscode.CommentThread[]>();
+  /** Boxes you closed, to keep closed when their file's boxes are next drawn: `<file uri>|<first line>`. */
+  private readonly closed = new Set<string>();
+  private readonly pending = new Map<string, NodeJS.Timeout>();
+  /** The box being edited and when its edit began, and the new note's box Add Note opened, for Cmd+Enter and Esc. */
+  private editing?: NoteComment;
+  private editingSince = 0;
+  private draft?: vscode.CommentThread;
+  private readonly disposables: vscode.Disposable[] = [];
+
+  constructor(private readonly backlinks: NotesBacklinks) {
+    this.controller.options = { prompt: 'Add a note', placeHolder: "A note in Markdown. Paste references copied with Cmd+'" };
+    this.controller.commentingRangeProvider = {
+      provideCommentingRanges: document => Notes.canHaveNotes(document.uri) ? [new vscode.Range(0, 0, Math.max(document.lineCount - 1, 0), 0)] : [],
+    };
+    this.disposables.push(
+      this.controller,
+      vscode.workspace.onDidOpenTextDocument(document => this.redraw(document)),
+      vscode.workspace.onDidCloseTextDocument(document => this.clear(document.uri)),
+      vscode.workspace.onDidChangeTextDocument(event => this.changed(event.document)),
+      // Any notes file can change the boxes of any open file: its own notes, or the back-links of the files it points at
+      backlinks.onDidChange(() => this.redrawAll()),
+      vscode.commands.registerCommand('incontext.addNote', () => this.addNote()),
+      vscode.commands.registerCommand('incontext.notes.create', (reply: NoteReply) => this.create(reply)),
+      vscode.commands.registerCommand('incontext.notes.cancelDraft', (reply: NoteReply) => this.closeDraft(reply.thread)),
+      vscode.commands.registerCommand('incontext.notes.cancelFocused', () => this.cancelFocused()),
+      vscode.commands.registerCommand('incontext.notes.submitFocused', () => this.submitFocused()),
+      vscode.commands.registerCommand(NotesComments.SELECT_AT, (file: string, line: number) => this.withThread(file, line, thread => NotesComments.select(thread))),
+      vscode.commands.registerCommand(NotesComments.MOVE_AT, (file: string, line: number) => this.withThread(file, line, thread => this.moveToSelection(thread))),
+      vscode.commands.registerCommand(NotesComments.EDIT_AT, (file: string, line: number) => this.withThread(file, line, thread => this.edit(thread.comments[0] as NoteComment))),
+      vscode.commands.registerCommand(NotesComments.OPEN_AT, (file: string, line: number) => this.withThread(file, line, thread => this.openMarkdown(thread))),
+      vscode.commands.registerCommand(NotesComments.DELETE_AT, (file: string, line: number) => this.withThread(file, line, thread => this.delete(thread))),
+      vscode.commands.registerCommand('incontext.notes.edit', (thread: vscode.CommentThread) => this.edit(thread.comments[0] as NoteComment)),
+      vscode.commands.registerCommand('incontext.notes.save', (comment: NoteComment) => this.save(comment)),
+      vscode.commands.registerCommand('incontext.notes.cancelEdit', (comment: NoteComment) => this.cancelEdit(comment)),
+      vscode.commands.registerCommand('incontext.notes.delete', (thread: vscode.CommentThread) => this.delete(thread)),
+      vscode.commands.registerCommand('incontext.notes.openMarkdown', (thread: vscode.CommentThread) => this.openMarkdown(thread)),
+    );
+    void this.redrawAll();
+  }
+
+  dispose(): void {
+    this.pending.forEach(timer => clearTimeout(timer));
+    this.threads.forEach(threads => threads.forEach(thread => thread.dispose()));
+    this.disposables.forEach(disposable => disposable.dispose());
+  }
+
+  /** The box on the cursor's line, opened for editing, or a new note's box for the line or the selected lines. */
+  private async addNote(): Promise<void> {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor || !Notes.canHaveNotes(editor.document.uri)) {
+      vscode.window.showErrorMessage('Open a file inside a workspace folder to add a note to one of its lines.');
+      return;
+    }
+    const { start, end } = editor.selection;
+    const existing = this.threadAt(editor.document.uri.toString(), start.line);
+    if (existing) {
+      existing.collapsibleState = vscode.CommentThreadCollapsibleState.Expanded;
+      this.edit(existing.comments[0] as NoteComment);
+      return;
+    }
+    const last = NotesComments.lastLine(new vscode.Range(start, end));
+    const draft = this.controller.createCommentThread(editor.document.uri, new vscode.Range(start.line, 0, last, editor.document.lineAt(last).text.length), []);
+    draft.label = `${NotesComments.LABEL} · new note`;
+    draft.collapsibleState = vscode.CommentThreadCollapsibleState.Expanded;
+    this.draft = draft;
+  }
+
+  private closeDraft(thread: NoteReply['thread']): void {
+    thread.dispose();
+    if (thread === this.draft) {
+      this.draft = undefined;
+    }
+  }
+
+  /**
+   * Cmd+Enter in a box. VS Code sends it to the thread's reply box, which a note doesn't have, so an edit would go
+   * nowhere: this saves the edit, reading its text from the box (a `comment:` document). A new note's box saves as
+   * VS Code saves it.
+   */
+  private async submitFocused(): Promise<void> {
+    const comment = this.editing;
+    if (comment?.mode !== vscode.CommentMode.Editing) {
+      await vscode.commands.executeCommand('editor.action.submitComment');
+      return;
+    }
+    // VS Code names an edit box /commentinput-<comment>-<time it opened>.md
+    const opened = (document: vscode.TextDocument) => Number(/^\/commentinput-[^/]+-(\d+)\.md$/.exec(document.uri.path)?.[1] ?? 0);
+    const box = vscode.workspace.textDocuments
+      .filter(document => document.uri.scheme === 'comment' && opened(document) >= this.editingSince - 1000)
+      .sort((a, b) => opened(b) - opened(a))[0];
+    if (box) {
+      comment.body = box.getText();
+      await this.save(comment);
+    }
+  }
+
+  /** Esc in a box: cancels the edit or the new note; any other box closes as VS Code closes it. */
+  private async cancelFocused(): Promise<void> {
+    if (this.editing?.mode === vscode.CommentMode.Editing) {
+      this.cancelEdit(this.editing);
+    } else if (this.draft) {
+      this.closeDraft(this.draft);
+    } else {
+      await vscode.commands.executeCommand('workbench.action.hideComment');
+    }
+  }
+
+  private async withThread(file: string, line: number, run: (thread: vscode.CommentThread) => unknown): Promise<void> {
+    const thread = this.threadAt(file, line);
+    if (thread) {
+      await run(thread);
+    }
+  }
+
+  /** Selects and reveals the lines a box covers. */
+  private static async select(thread: vscode.CommentThread): Promise<void> {
+    if (thread.range) {
+      const editor = await vscode.window.showTextDocument(thread.uri, { selection: thread.range, preserveFocus: false });
+      editor.revealRange(thread.range, vscode.TextEditorRevealType.InCenterIfOutsideViewport);
+    }
+  }
+
+  /**
+   * Moves a box to the lines selected in its file's editor, or to the cursor's line: its note, and the references of
+   * the notes elsewhere that point at exactly its lines. How a note's lines change, or a note moves up or down, and
+   * how a reference whose lines have drifted is put right from where it points, without writing anything again.
+   */
+  private async moveToSelection(thread: vscode.CommentThread): Promise<void> {
+    const { note, backLinks } = thread.comments[0] as NoteComment;
+    const editor = vscode.window.visibleTextEditors.find(visible => visible.document.uri.toString() === thread.uri.toString());
+    if (!editor) {
+      vscode.window.showInformationMessage('Select the lines in the file first, then choose Move to selection.');
+      return;
+    }
+    const { start, end } = editor.selection;
+    const last = NotesComments.lastLine(new vscode.Range(start, end));
+    const file = Notes.fileFor(thread.uri);
+    if (note && file) {
+      const heading = Notes.heading(start.line + 1, editor.document.lineAt(start.line).text, last + 1);
+      await Notes.write(file, Notes.withHeading(await Notes.read(file) ?? '', note.headingLine, heading));
+    }
+    // A back-link that points at only part of a note's lines keeps pointing there
+    const pointed = ReferenceUtils.createCodeReference(editor.document.uri, new vscode.Selection(start.line, 0, last, 0));
+    for (const link of backLinks.filter(candidate => candidate.targetLine === thread.range?.start.line && candidate.targetEndLine === thread.range.end.line)) {
+      const text = await Notes.read(link.notesFile);
+      const pointing = text === undefined ? undefined : Notes.parse(text).find(candidate => candidate.headingLine === link.headingLine);
+      if (text !== undefined && pointing) {
+        await Notes.write(link.notesFile, Notes.withSection(text, link.headingLine, pointing.text.split(link.reference).join(pointed)));
+      }
+    }
+    await this.redraw(editor.document);
+  }
+
+  /** Saves the text typed into a new note's box as a note on those lines. */
+  private async create(reply: NoteReply): Promise<void> {
+    if (await this.addToNotesFile(reply.thread.uri, reply.thread.range, reply.text)) {
+      this.closeDraft(reply.thread);
+    }
+  }
+
+  /** Writes a new note on some lines of a file into its notes file, asking for the notes folder the first time. */
+  private async addToNotesFile(source: vscode.Uri, range: vscode.Range | undefined, text: string): Promise<boolean> {
+    const document = await vscode.workspace.openTextDocument(source);
+    const file = text.trim() ? Notes.fileFor(source) ?? (await Notes.askFolder() ? Notes.fileFor(source) : undefined) : undefined;
+    if (!file) {
+      return false;
+    }
+    const lines = range ?? new vscode.Range(0, 0, 0, 0);
+    const current = await Notes.read(file) ?? `# Notes on ${ReferenceUtils.createFileReference(source)}\n`;
+    const heading = Notes.heading(lines.start.line + 1, document.lineAt(lines.start.line).text, NotesComments.lastLine(lines) + 1);
+    await Notes.write(file, Notes.withNote(current, heading, text));
+    await this.redraw(document);
+    return true;
+  }
+
+  private edit(comment: NoteComment): void {
+    this.editing = comment;
+    this.editingSince = Date.now();
+    comment.body = comment.note?.text ?? '';
+    comment.mode = vscode.CommentMode.Editing;
+    comment.thread.comments = [...comment.thread.comments];
+  }
+
+  /** Saves an edit: the note's new text, or for a box with only back-links, its first note. */
+  private async save(comment: NoteComment): Promise<void> {
+    const text = typeof comment.body === 'string' ? comment.body : comment.body.value;
+    comment.mode = vscode.CommentMode.Preview;
+    this.editing = undefined;
+    if (!comment.note) {
+      if (!await this.addToNotesFile(comment.thread.uri, comment.thread.range, text)) {
+        this.cancelEdit(comment);
+      }
+      return;
+    }
+    const file = Notes.fileFor(comment.thread.uri);
+    if (file) {
+      await Notes.write(file, Notes.withSection(await Notes.read(file) ?? '', comment.note.headingLine, text));
+    }
+    const document = vscode.workspace.textDocuments.find(open => open.uri.toString() === comment.thread.uri.toString());
+    if (document) {
+      await this.redraw(document);
+    }
+  }
+
+  private cancelEdit(comment: NoteComment): void {
+    comment.body = comment.preview();
+    comment.mode = vscode.CommentMode.Preview;
+    this.editing = undefined;
+    comment.thread.comments = [...comment.thread.comments];
+  }
+
+  private async delete(thread: vscode.CommentThread): Promise<void> {
+    const { note } = thread.comments[0] as NoteComment;
+    const file = Notes.fileFor(thread.uri);
+    if (!note || !file) {
+      return;
+    }
+    const answer = await vscode.window.showWarningMessage('Delete this note?', { modal: true, detail: note.text }, 'Delete');
+    if (answer !== 'Delete') {
+      return;
+    }
+    await Notes.write(file, Notes.withSection(await Notes.read(file) ?? '', note.headingLine, undefined));
+    const document = vscode.workspace.textDocuments.find(open => open.uri.toString() === thread.uri.toString());
+    if (document) {
+      await this.redraw(document);
+    }
+  }
+
+  private async openMarkdown(thread: vscode.CommentThread): Promise<void> {
+    const { note } = thread.comments[0] as NoteComment;
+    const file = Notes.fileFor(thread.uri);
+    if (note && file) {
+      await vscode.commands.executeCommand(NotesProvider.OPEN_NOTE, file.toString(), note.headingLine);
+    }
+  }
+
+  /** The last line of a selection, leaving out a last line that it only reaches at its very start. */
+  private static lastLine(range: vscode.Range): number {
+    return range.end.line > range.start.line && range.end.character === 0 ? range.end.line - 1 : range.end.line;
+  }
+
+  private threadAt(file: string, line: number): vscode.CommentThread | undefined {
+    return this.threads.get(file)?.find(thread => thread.range?.start.line === line);
+  }
+
+  /** After a source file changes, moves its notes to follow their lines, a moment after the typing stops. */
+  private changed(document: vscode.TextDocument): void {
+    if (!Notes.isNotesFile(document.uri) && this.threads.get(document.uri.toString())?.some(thread => (thread.comments[0] as NoteComment).note)) {
+      const key = document.uri.toString();
+      clearTimeout(this.pending.get(key));
+      this.pending.set(key, setTimeout(() => {
+        this.pending.delete(key);
+        this.follow(document);
+      }, 300));
+    }
+  }
+
+  /** Moves each of a file's notes to its lines, found again by the first line's text. */
+  private follow(document: vscode.TextDocument): void {
+    for (const thread of this.threads.get(document.uri.toString()) ?? []) {
+      const comment = thread.comments[0] as NoteComment;
+      const range = comment.note && Notes.rangeIn(document, comment.note);
+      if (range && !thread.range?.isEqual(range)) {
+        thread.range = range;
+        // The box's Lines link names its lines
+        if (comment.mode === vscode.CommentMode.Preview) {
+          comment.body = comment.preview();
+          thread.comments = [comment];
+        }
+      }
+    }
+  }
+
+  private async redrawAll(): Promise<void> {
+    for (const document of vscode.workspace.textDocuments) {
+      await this.redraw(document);
+    }
+  }
+
+  /**
+   * Draws a file's boxes, open unless you closed them: one per note, with the back-links that point into its lines,
+   * and one per set of lines that only back-links point at. Not while one of the file's boxes is being edited.
+   */
+  private async redraw(document: vscode.TextDocument): Promise<void> {
+    const key = document.uri.toString();
+    if (!Notes.canHaveNotes(document.uri)) {
+      return;
+    }
+    const old = this.threads.get(key) ?? [];
+    if (old.some(thread => thread.comments.some(comment => comment.mode === vscode.CommentMode.Editing))) {
+      return;
+    }
+    const notes = await NotesProvider.notesIn(document);
+    const unclaimed = [...(await this.backlinks.backLinks()).get(document.uri.fsPath) ?? []];
+    const boxes: { range: vscode.Range; note?: Note; backLinks: BackLink[] }[] = notes.map(({ note, range }) => {
+      // Back-links that point into a note's lines show in that note's box
+      const backLinks = unclaimed.filter(link => range.start.line <= link.targetLine && link.targetLine <= range.end.line);
+      backLinks.forEach(link => unclaimed.splice(unclaimed.indexOf(link), 1));
+      return { range, note, backLinks };
+    });
+    const byLines = new Map<string, BackLink[]>();
+    for (const link of unclaimed) {
+      const lines = `${link.targetLine}-${link.targetEndLine}`;
+      byLines.set(lines, [...byLines.get(lines) ?? [], link]);
+    }
+    for (const backLinks of byLines.values()) {
+      const first = Math.min(backLinks[0].targetLine, document.lineCount - 1);
+      const last = Math.min(backLinks[0].targetEndLine, document.lineCount - 1);
+      boxes.push({ range: new vscode.Range(first, 0, last, document.lineAt(last).text.length), backLinks });
+    }
+
+    for (const thread of old) {
+      const threadKey = `${key}|${thread.range?.start.line}`;
+      if (thread.collapsibleState === vscode.CommentThreadCollapsibleState.Collapsed) {
+        this.closed.add(threadKey);
+      } else {
+        this.closed.delete(threadKey);
+      }
+      thread.dispose();
+    }
+    const threads = boxes.map(({ range, note, backLinks }) => {
+      const thread = this.controller.createCommentThread(document.uri, range, []);
+      thread.comments = [new NoteComment(thread, note, backLinks)];
+      thread.canReply = false;
+      thread.contextValue = note ? NotesComments.NOTE : NotesComments.BACKLINKS;
+      thread.label = NotesComments.LABEL;
+      thread.collapsibleState = this.closed.has(`${key}|${range.start.line}`)
+        ? vscode.CommentThreadCollapsibleState.Collapsed
+        : vscode.CommentThreadCollapsibleState.Expanded;
+      return thread;
+    });
+    this.threads.set(key, threads);
+  }
+
+  private clear(uri: vscode.Uri): void {
+    this.threads.get(uri.toString())?.forEach(thread => thread.dispose());
+    this.threads.delete(uri.toString());
+  }
+}

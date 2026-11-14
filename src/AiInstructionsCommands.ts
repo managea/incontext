@@ -18,8 +18,9 @@ export interface AiInstructionsResult {
 }
 
 /**
- * The commands that install the citation instruction (media/ai-instructions.md) into Claude Code, GitHub Copilot
- * and Codex, and remove it again, plus the offer to update it when the link server's port changes.
+ * The commands that install the instruction (media/ai-instructions.md: citing code, and writing notes on code) into
+ * Claude Code, GitHub Copilot and Codex, and remove it again, plus the offer to update it when the link server's port
+ * or the notes folder changes.
  * Run with `{ tools }`, they don't ask anything and skip files reached through a symlink.
  */
 export class AiInstructionsCommands {
@@ -33,8 +34,9 @@ export class AiInstructionsCommands {
       vscode.commands.registerCommand(AiInstructionsCommands.REMOVE, (args?: AiInstructionsArgs) => AiInstructionsCommands.remove(args)),
       vscode.workspace.onDidChangeConfiguration(event => {
         // Every window sees the change; only the one it was made in offers the update
-        if (event.affectsConfiguration('incontext.linkServer.port') && vscode.window.state.focused) {
-          void AiInstructionsCommands.offerPortUpdate(mediaFolder);
+        const changed = event.affectsConfiguration('incontext.linkServer.port') || event.affectsConfiguration('incontext.notes.folder');
+        if (changed && vscode.window.state.focused) {
+          void AiInstructionsCommands.offerUpdate(mediaFolder);
         }
       }),
     ];
@@ -104,17 +106,21 @@ export class AiInstructionsCommands {
     return results;
   }
 
-  private static async offerPortUpdate(mediaFolder: string): Promise<void> {
-    const port = AiInstructionsCommands.port();
+  /** After the port or the notes folder changed: offers to update the instructions that still name the old one. */
+  private static async offerUpdate(mediaFolder: string): Promise<void> {
+    const instructions = AiInstructionsCommands.instructions(mediaFolder, AiInstructionsCommands.port());
     const stale = AiInstructions.targets().filter(target => {
-      const state = AiInstructions.state(target);
-      return state.installed && state.port !== port;
+      if (!AiInstructions.state(target).installed) {
+        return false;
+      }
+      const current = fs.readFileSync(target.file, 'utf8');
+      return AiInstructions.content(target, instructions, current) !== current;
     });
     if (stale.length === 0) {
       return;
     }
     const answer = await vscode.window.showInformationMessage(
-      `The AI assistant instructions incontext wrote for ${stale.map(target => target.label).join(', ')} still link to the old port. Update them to port ${port}?`,
+      `The AI assistant instructions incontext wrote for ${stale.map(target => target.label).join(', ')} name the old link server port or notes folder. Update them?`,
       'Update');
     if (answer === 'Update') {
       await AiInstructionsCommands.write(stale, AiInstructionsCommands.instructions(mediaFolder, AiInstructionsCommands.port()), true);
@@ -173,7 +179,13 @@ export class AiInstructionsCommands {
   }
 
   private static instructions(mediaFolder: string, port: number): string {
-    return AiInstructions.render(AiInstructions.loadTemplate(mediaFolder), port, vscode.env.uriScheme);
+    return AiInstructions.render(AiInstructions.loadTemplate(mediaFolder), port, vscode.env.uriScheme, AiInstructionsCommands.notesFolder());
+  }
+
+  /** The notes folder in the user's settings, which the instruction names: a project's own folder is the project's. */
+  private static notesFolder(): string | undefined {
+    const folder = vscode.workspace.getConfiguration('incontext.notes').inspect<string>('folder')?.globalValue?.trim();
+    return folder ? folder.replace(/^~(?=$|[/\\])/, os.homedir()) : undefined;
   }
 
   private static port(): number {

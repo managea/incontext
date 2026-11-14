@@ -5,7 +5,8 @@
   const status = document.getElementById('status');
   const fallback = document.getElementById('fallback');
   const uriPrefix = document.querySelector('meta[name="incontext-uri-prefix"]').content;
-  // The Claude app's own Browser pane; links Cmd+clicked in the app open in the default browser instead
+  // The Claude app's own Browser pane; links Cmd+clicked in the app open in the default browser instead.
+  // In the pane you stay in the app; in a browser tab, which stays in front otherwise, VS Code comes to the front.
   const inClaudeApp = navigator.userAgent.includes('Claude/');
   let attempt = 0;
 
@@ -55,7 +56,7 @@
       const response = await fetch('/launch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Incontext': '1' },
-        body: JSON.stringify({ reference }),
+        body: JSON.stringify({ reference, focus: !inClaudeApp }),
         cache: 'no-store',
         credentials: 'omit',
       });

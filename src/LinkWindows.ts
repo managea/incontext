@@ -4,7 +4,7 @@ import * as http from 'http';
 import { AddressInfo } from 'net';
 import * as os from 'os';
 import * as path from 'path';
-import { Launch, LaunchResult, LinkRequest } from './LinkRequest';
+import { Launch, LaunchRequest, LaunchResult, LinkRequest } from './LinkRequest';
 import { LinkServer } from './LinkServer';
 
 /** A VS Code window that can open references passed on by the window that owns the link server's port. */
@@ -189,7 +189,7 @@ export class WindowEndpoint {
       return LinkServer.send(response, { status: 413, message: 'Request too large' });
     }
     const checked = LinkRequest.checkBody(body);
-    return LinkServer.send(response, 'reference' in checked ? await this.open(checked.reference) : checked);
+    return LinkServer.send(response, 'reference' in checked ? await this.open(checked) : checked);
   }
 
   private static tokenMatches(authorization: string | undefined, token: string): boolean {
@@ -200,13 +200,13 @@ export class WindowEndpoint {
 }
 
 /**
- * Passes a reference on to another window's endpoint. Resolves to undefined when the window can't be reached,
- * which means it has gone.
+ * Passes a reference on to another window's endpoint, with whether that window should come to the front once it
+ * has opened it. Resolves to undefined when the window can't be reached, which means it has gone.
  */
-export function forwardToWindow(entry: WindowEntry, reference: string, timeoutMs = 10_000): Promise<LaunchResult | undefined> {
+export function forwardToWindow(entry: WindowEntry, request: LaunchRequest, timeoutMs = 10_000): Promise<LaunchResult | undefined> {
   return new Promise(resolve => {
-    const body = JSON.stringify({ reference });
-    const request = http.request({
+    const body = JSON.stringify({ reference: request.reference, focus: request.focus });
+    const outgoing = http.request({
       host: '127.0.0.1',
       port: entry.port,
       method: 'POST',
@@ -224,11 +224,11 @@ export function forwardToWindow(entry: WindowEntry, reference: string, timeoutMs
       response.on('end', () => resolve({ status: response.statusCode ?? 502, message: Buffer.concat(chunks).toString('utf8') }));
       response.on('error', () => resolve({ status: 502, message: 'The VS Code window that has this folder stopped answering' }));
     });
-    request.on('timeout', () => {
-      request.destroy();
+    outgoing.on('timeout', () => {
+      outgoing.destroy();
       resolve({ status: 504, message: 'The VS Code window that has this folder did not answer in time' });
     });
-    request.on('error', () => resolve(undefined));
-    request.end(body);
+    outgoing.on('error', () => resolve(undefined));
+    outgoing.end(body);
   });
 }

@@ -2,7 +2,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { LaunchResult } from '../LinkRequest';
+import { LaunchRequest, LaunchResult } from '../LinkRequest';
 import { LinkServer } from '../LinkServer';
 import { forwardToWindow, WindowEndpoint, WindowEntry, WindowRegistry } from '../LinkWindows';
 import { launch, pageHeaders, request } from './http';
@@ -12,14 +12,14 @@ const MEDIA = path.resolve(__dirname, '..', '..', 'media');
 suite('LinkServer', () => {
   let server: LinkServer;
   let port: number;
-  let launched: string[];
+  let launched: LaunchRequest[];
   let result: LaunchResult;
 
   setup(async () => {
     launched = [];
     result = { status: 204 };
-    server = new LinkServer(LinkServer.loadPage(MEDIA, 'vscode://managea.incontext'), async reference => {
-      launched.push(reference);
+    server = new LinkServer(LinkServer.loadPage(MEDIA, 'vscode://managea.incontext'), async request => {
+      launched.push(request);
       return result;
     });
     assert.ok(await server.listen(0));
@@ -44,6 +44,7 @@ suite('LinkServer', () => {
     assert.strictEqual(script.headers['content-type'], 'text/javascript; charset=utf-8');
     assert.strictEqual(script.headers['cache-control'], 'no-store');
     assert.ok(script.body.includes("fetch('/launch'"));
+    assert.ok(script.body.includes('focus: !inClaudeApp'));
     assert.ok(!script.body.includes('innerHTML'));
   });
 
@@ -71,7 +72,20 @@ suite('LinkServer', () => {
   test('opens a reference the page posts, and answers 204', async () => {
     const response = await launch(port, '@incontext/src/extension.ts:L392:394');
     assert.strictEqual(response.status, 204);
-    assert.deepStrictEqual(launched, ['@incontext/src/extension.ts:L392:394']);
+    assert.deepStrictEqual(launched, [{ reference: '@incontext/src/extension.ts:L392:394', focus: false }]);
+  });
+
+  test('passes on whether VS Code should come to the front', async () => {
+    assert.strictEqual((await launch(port, '@incontext/a.ts', {}, { focus: true })).status, 204);
+    assert.strictEqual((await launch(port, '@incontext/b.ts', {}, { focus: false })).status, 204);
+    assert.deepStrictEqual(launched, [{ reference: '@incontext/a.ts', focus: true }, { reference: '@incontext/b.ts', focus: false }]);
+  });
+
+  test('refuses a focus that is not true or false', async () => {
+    const response = await launch(port, '@incontext/a.ts', {}, { focus: 'yes' });
+    assert.strictEqual(response.status, 400);
+    assert.strictEqual(response.body, 'Expected focus to be true or false');
+    assert.deepStrictEqual(launched, []);
   });
 
   test('passes on why a reference did not open', async () => {
@@ -118,13 +132,13 @@ suite('LinkServer', () => {
 
 suite('WindowEndpoint', () => {
   let endpoint: WindowEndpoint;
-  let opened: string[];
+  let opened: LaunchRequest[];
   let entry: WindowEntry;
 
   setup(async () => {
     opened = [];
-    endpoint = new WindowEndpoint(async reference => {
-      opened.push(reference);
+    endpoint = new WindowEndpoint(async request => {
+      opened.push(request);
       return { status: 204 };
     });
     const port = await endpoint.listen();
@@ -133,31 +147,32 @@ suite('WindowEndpoint', () => {
 
   teardown(() => endpoint.close());
 
-  test('opens references passed on with its token', async () => {
-    assert.deepStrictEqual(await forwardToWindow(entry, '@alpha/a.ts:L1'), { status: 204, message: '' });
-    assert.deepStrictEqual(opened, ['@alpha/a.ts:L1']);
+  test('opens references passed on with its token, and whether to come to the front', async () => {
+    assert.deepStrictEqual(await forwardToWindow(entry, { reference: '@alpha/a.ts:L1', focus: true }), { status: 204, message: '' });
+    assert.deepStrictEqual(await forwardToWindow(entry, { reference: '@alpha/b.ts', focus: false }), { status: 204, message: '' });
+    assert.deepStrictEqual(opened, [{ reference: '@alpha/a.ts:L1', focus: true }, { reference: '@alpha/b.ts', focus: false }]);
   });
 
   test('refuses requests without its token, from a browser, or for another host', async () => {
     const body = JSON.stringify({ reference: '@alpha/a.ts' });
     const headers = { Host: `127.0.0.1:${entry.port}`, Authorization: `Bearer ${entry.token}` };
-    assert.strictEqual((await forwardToWindow({ ...entry, token: 'wrong' }, '@alpha/a.ts'))?.status, 403);
+    assert.strictEqual((await forwardToWindow({ ...entry, token: 'wrong' }, { reference: '@alpha/a.ts', focus: false }))?.status, 403);
     assert.strictEqual((await request(entry.port, 'POST', '/open', { ...headers, Authorization: undefined }, body)).status, 403);
     assert.strictEqual((await request(entry.port, 'POST', '/open', { ...headers, Origin: 'http://evil.example' }, body)).status, 403);
     assert.strictEqual((await request(entry.port, 'POST', '/open', { ...headers, Host: `localhost:${entry.port}` }, body)).status, 403);
     assert.strictEqual((await request(entry.port, 'GET', '/open', headers)).status, 403);
     assert.strictEqual((await request(entry.port, 'POST', '/open', headers, body)).status, 204, 'the same request with all checks met');
-    assert.deepStrictEqual(opened, ['@alpha/a.ts']);
+    assert.deepStrictEqual(opened, [{ reference: '@alpha/a.ts', focus: false }]);
   });
 
   test('refuses references with ..', async () => {
-    assert.strictEqual((await forwardToWindow(entry, '@alpha/../secret'))?.status, 400);
+    assert.strictEqual((await forwardToWindow(entry, { reference: '@alpha/../secret', focus: false }))?.status, 400);
     assert.deepStrictEqual(opened, []);
   });
 
   test('forwarding to a window that has gone resolves to undefined', async () => {
     await endpoint.close();
-    assert.strictEqual(await forwardToWindow(entry, '@alpha/a.ts'), undefined);
+    assert.strictEqual(await forwardToWindow(entry, { reference: '@alpha/a.ts', focus: false }), undefined);
   });
 });
 

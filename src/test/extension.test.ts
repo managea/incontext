@@ -6,11 +6,16 @@ import * as vscode from 'vscode';
 import { MarkdownPreview } from '../MarkdownPreview';
 import { ReferenceUtils } from '../ReferenceUtils';
 import { ReferenceParser } from '../ReferenceParser';
+import { LaunchRequest } from '../LinkRequest';
+import { LinkService } from '../LinkService';
 import { WindowEndpoint, WindowRegistry } from '../LinkWindows';
 import { AiInstructions } from '../AiInstructions';
 import { AiInstructionsResult } from '../AiInstructionsCommands';
 import { ObsidianPlugin } from '../ObsidianPlugin';
 import { ObsidianPluginResult } from '../ObsidianPluginCommands';
+import { Notes } from '../Notes';
+import { NoteComment } from '../NotesComments';
+import { NotesBacklinks } from '../NotesBacklinks';
 import { launch, request } from './http';
 
 // Runs in the workspace .vscode-test.mjs sets up: folders alpha and beta, with ../outside next to them,
@@ -110,20 +115,22 @@ suite('Extension', () => {
       assert.strictEqual(activeFile(), undefined);
     });
 
-    test('passes a link on to the window that has its folder', async () => {
-      const passedOn: string[] = [];
-      const otherWindow = new WindowEndpoint(async reference => {
-        passedOn.push(reference);
+    test('passes a link on to the window that has its folder, with whether to come to the front', async () => {
+      const passedOn: LaunchRequest[] = [];
+      const otherWindow = new WindowEndpoint(async request => {
+        passedOn.push(request);
         return { status: 204 };
       });
       const registry = WindowRegistry.open(port)!;
       registry.write({ id: 'test-gamma', pid: process.pid, port: await otherWindow.listen(), token: otherWindow.token, folders: ['gamma'], focusedAt: Date.now() });
       try {
         assert.strictEqual((await launch(port, '@gamma/c.ts:L3')).status, 204);
-        assert.deepStrictEqual(passedOn, ['@gamma/c.ts:L3']);
+        assert.strictEqual((await launch(port, '@gamma/d.ts', {}, { focus: true })).status, 204);
+        const forwarded = [{ reference: '@gamma/c.ts:L3', focus: false }, { reference: '@gamma/d.ts', focus: true }];
+        assert.deepStrictEqual(passedOn, forwarded);
         // alpha is only open in this window, however recently the other window had focus
         assert.strictEqual((await launch(port, '@alpha/src/a.ts:L4')).status, 204);
-        assert.deepStrictEqual(passedOn, ['@gamma/c.ts:L3']);
+        assert.deepStrictEqual(passedOn, forwarded);
         assert.deepStrictEqual(selectedLines(), [4, 4]);
       } finally {
         registry.remove('test-gamma');
@@ -140,6 +147,28 @@ suite('Extension', () => {
       assert.strictEqual((await launch(port, '@alpha/src/a.ts:L8')).status, 204);
       assert.deepStrictEqual(selectedLines(), [8, 8]);
       assert.ok(!registry.read().some(window => window.id === 'test-gone'));
+    });
+
+    test('opens a reference from a browser tab, which asks VS Code to come to the front, without waiting for it', async () => {
+      const response = await launch(port, '@alpha/src/a.ts:L9:11', {}, { focus: true });
+      assert.strictEqual(response.status, 204, response.body);
+      assert.strictEqual(activeFile(), path.join(folder('alpha'), 'src', 'a.ts'));
+      assert.deepStrictEqual(selectedLines(), [9, 11]);
+      assert.ok(inOneGroup());
+    });
+
+    test('the vscode:// URI that brings a window to the front goes to this window, and opens nothing', async () => {
+      // What bringToFront relies on: asExternalUri names this window, so VS Code focuses it rather than the most
+      // recently focused window, and the URI handler takes the URI, after which VS Code focuses that window
+      const uri = await vscode.env.asExternalUri(vscode.Uri.from({ scheme: vscode.env.uriScheme, authority: 'managea.incontext', path: LinkService.FOCUS_PATH }));
+      assert.strictEqual(uri.path, LinkService.FOCUS_PATH);
+      assert.match(uri.query, /(^|&)windowId=\d+(&|$)/);
+      assert.strictEqual((await launch(port, '@beta/b.ts:L2')).status, 204);
+      assert.strictEqual(await vscode.env.openExternal(uri), true);
+      await sleep(300);
+      assert.strictEqual(activeFile(), path.join(folder('beta'), 'b.ts'));
+      assert.deepStrictEqual(selectedLines(), [2, 2]);
+      assert.ok(inOneGroup());
     });
 
     test('stops and starts again with its setting', async () => {
@@ -255,6 +284,255 @@ suite('Extension', () => {
       await waitFor('b.ts to open', () => activeFile() === path.join(folder('beta'), 'b.ts'));
       assert.deepStrictEqual(selectedLines(), [6, 9]);
       assert.ok(inOneGroup());
+    });
+
+    test('a short link clicked in a drawing opens beside it, and the next click reuses that split', async () => {
+      // A webview stands in for a drawing such as Excalidraw's custom editor: both are tabs that aren't text editors
+      const drawing = vscode.window.createWebviewPanel('test.drawing', 'Drawing', vscode.ViewColumn.One, {});
+      try {
+        await openLink(`${extensionUri()}/@beta/b.ts:L6:9`);
+        await waitFor('b.ts to open', () => activeFile() === path.join(folder('beta'), 'b.ts'));
+        assert.deepStrictEqual(selectedLines(), [6, 9]);
+        const split = vscode.window.activeTextEditor!.viewColumn;
+        assert.notStrictEqual(split, drawing.viewColumn, 'the code is beside the drawing, not on top of it');
+        assert.ok(drawing.visible, 'the drawing stays in view');
+
+        drawing.reveal(drawing.viewColumn);
+        await waitFor('the drawing to be the active tab', () => drawing.active);
+        await openLink(`${extensionUri()}/@alpha/src/a.ts:L2:3`);
+        await waitFor('a.ts to open', () => activeFile() === path.join(folder('alpha'), 'src', 'a.ts'));
+        assert.strictEqual(vscode.window.activeTextEditor!.viewColumn, split);
+        assert.strictEqual(vscode.window.tabGroups.all.length, 2);
+      } finally {
+        drawing.dispose();
+      }
+    });
+
+    test('copies a reference as a link, which opens it', async () => {
+      const editor = await vscode.window.showTextDocument(vscode.Uri.file(path.join(folder('alpha'), 'src', 'a.ts')));
+      editor.selection = new vscode.Selection(2, 0, 3, 5);
+      await vscode.commands.executeCommand('incontext.copyReferenceAsLink');
+      const link = await vscode.env.clipboard.readText();
+      assert.strictEqual(link, `${extensionUri()}/@alpha/src/a.ts:L3:4`);
+      // The editor's context menu passes the editor's file, and the selection still decides the lines
+      await vscode.env.clipboard.writeText('');
+      await vscode.commands.executeCommand('incontext.copyReferenceAsLink', editor.document.uri);
+      assert.strictEqual(await vscode.env.clipboard.readText(), link);
+
+      await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+      await openLink(link);
+      await waitFor('a.ts to open', () => activeFile() === path.join(folder('alpha'), 'src', 'a.ts'));
+      assert.deepStrictEqual(selectedLines(), [3, 4]);
+    });
+  });
+
+  suite('notes', () => {
+    const notesText = [
+      '# Notes on @alpha/src/a.ts',
+      '',
+      '## L5: const line5 = 5;',
+      'Defined in @beta/b.ts:L2:3, invoked from @beta/b.ts:L10.',
+      'Second line.',
+      '',
+      '## L7',
+      '',
+    ].join('\n');
+    const notesFolder = () => path.join(path.dirname(folder('alpha')), 'notes');
+    const aTs = () => vscode.Uri.file(path.join(folder('alpha'), 'src', 'a.ts'));
+
+    suiteSetup(async () => {
+      fs.mkdirSync(path.join(notesFolder(), 'alpha', 'src'), { recursive: true });
+      fs.writeFileSync(path.join(notesFolder(), 'alpha', 'src', 'a.ts.md'), notesText);
+      await vscode.workspace.getConfiguration('incontext.notes').update('folder', notesFolder(), vscode.ConfigurationTarget.Global);
+    });
+
+    suiteTeardown(async () => {
+      await vscode.workspace.getConfiguration('incontext.notes').update('folder', undefined, vscode.ConfigurationTarget.Global);
+    });
+
+    test('reads notes with their references, and finds their lines after the code above moves', async () => {
+      const [first, second] = Notes.parse(notesText);
+      assert.deepStrictEqual([first.line, first.anchor, first.headingLine], [5, 'const line5 = 5;', 2]);
+      assert.deepStrictEqual(first.references, ['@beta/b.ts:L2:3', '@beta/b.ts:L10']);
+      assert.strictEqual(first.text, 'Defined in @beta/b.ts:L2:3, invoked from @beta/b.ts:L10.\nSecond line.');
+      assert.deepStrictEqual([second.line, second.anchor, second.text], [7, '', '']);
+
+      const code = fs.readFileSync(aTs().fsPath, 'utf8');
+      assert.strictEqual(Notes.locate(await vscode.workspace.openTextDocument({ content: code }), first), 4);
+      const moved = await vscode.workspace.openTextDocument({ content: `// a new first line\n${code}` });
+      assert.strictEqual(Notes.locate(moved, first), 5, 'the note follows its line');
+      assert.strictEqual(Notes.locate(moved, second), 6, 'a note without text stays on its line number');
+    });
+
+    test('shows the whole note on hover, with each reference a link that opens it beside the code', async () => {
+      await vscode.window.showTextDocument(aTs());
+      const lenses = await vscode.commands.executeCommand<vscode.CodeLens[]>('vscode.executeCodeLensProvider', aTs());
+      assert.ok(!lenses.some(lens => lens.command?.command.startsWith('incontext.')), 'no line above the code: the note shows under it');
+
+      const hovers = await vscode.commands.executeCommand<vscode.Hover[]>('vscode.executeHoverProvider', aTs(), new vscode.Position(4, 3));
+      const hoverText = hovers.flatMap(hover => hover.contents.map(content => typeof content === 'string' ? content : content.value)).join('\n');
+      assert.match(hoverText, /Second line\./);
+      const link = /\[@beta\/b\.ts:L2:3\]\(command:(incontext\.openReferenceBeside)\?([^)]+)\)/.exec(hoverText);
+      assert.ok(link, hoverText);
+
+      await vscode.commands.executeCommand(link[1], ...JSON.parse(decodeURIComponent(link[2])));
+      await waitFor('b.ts to open beside', () => activeFile() === path.join(folder('beta'), 'b.ts'));
+      assert.deepStrictEqual(selectedLines(), [2, 3]);
+      assert.ok(!inOneGroup());
+    });
+
+    test('lines only notes elsewhere point at get a box with those back-links, and Add note', async () => {
+      const bTs = vscode.Uri.file(path.join(folder('beta'), 'b.ts'));
+      const links = (await NotesBacklinks.read()).get(bTs.fsPath) ?? [];
+      assert.deepStrictEqual(links.map(link => [link.targetLine, link.targetEndLine, link.line, link.source.fsPath]), [[1, 2, 5, aTs().fsPath], [9, 9, 5, aTs().fsPath]]);
+
+      const thread = { uri: bTs, range: new vscode.Range(1, 0, 2, 16) } as vscode.CommentThread;
+      const preview = new NoteComment(thread, undefined, [links[0]]).preview().value;
+      const target = encodeURIComponent(JSON.stringify([bTs.toString(), 1]));
+      assert.ok(preview.includes(`[Lines 2–3](command:incontext.notes.selectAt?${target}) · [Move to selection](command:incontext.notes.moveAt?${target}) · [Add note](command:incontext.notes.editAt?${target})`), preview);
+      assert.ok(!preview.includes('incontext.notes.deleteAt'), 'nothing to delete: back-links are not stored');
+      const back = /\[← Note on a\.ts:L5\]\(command:(incontext\.notes\.goToNote)\?([^)]+)\)\n\n> /.exec(preview);
+      assert.ok(back, preview);
+      assert.ok(preview.includes('\n\n> Defined in @beta/b.ts:L2:3, invoked from @beta/b.ts:L10.\n> Second line.'), 'the note is quoted');
+      await vscode.commands.executeCommand(back[1], ...JSON.parse(decodeURIComponent(back[2])));
+      await waitFor('a.ts to open at the note', () => activeFile() === aTs().fsPath);
+      assert.deepStrictEqual(selectedLines(), [5, 5]);
+    });
+
+    test('Move to selection in a back-link box points the notes\' references at the selected lines', async () => {
+      const bTs = vscode.Uri.file(path.join(folder('beta'), 'b.ts'));
+      const notesFile = path.join(notesFolder(), 'alpha', 'src', 'a.ts.md');
+      const editor = await vscode.window.showTextDocument(bTs);
+      editor.selection = new vscode.Selection(4, 0, 7, 0);
+      try {
+        await waitFor('the reference to move', async () => {
+          await vscode.commands.executeCommand('incontext.notes.moveAt', bTs.toString(), 1);
+          return Notes.parse(fs.readFileSync(notesFile, 'utf8'))[0].text.includes('@beta/b.ts:L5:7');
+        });
+        assert.strictEqual(Notes.parse(fs.readFileSync(notesFile, 'utf8'))[0].text, 'Defined in @beta/b.ts:L5:7, invoked from @beta/b.ts:L10.\nSecond line.');
+      } finally {
+        fs.writeFileSync(notesFile, notesText);
+      }
+    });
+
+    test('Add note in a back-link box saves a note on those lines, which can point on: a chain', async () => {
+      const bTs = vscode.Uri.file(path.join(folder('beta'), 'b.ts'));
+      const notesFile = path.join(notesFolder(), 'beta', 'b.ts.md');
+      await vscode.workspace.openTextDocument(bTs);
+      try {
+        const box = { body: 'Next stop @alpha/src/a.ts:L20', note: undefined, backLinks: [], thread: { uri: bTs, range: new vscode.Range(1, 0, 2, 16), comments: [] }, mode: vscode.CommentMode.Editing };
+        await vscode.commands.executeCommand('incontext.notes.save', box);
+        const [note] = Notes.parse(fs.readFileSync(notesFile, 'utf8'));
+        assert.deepStrictEqual([note.line, note.lines, note.anchor, note.text], [2, 2, 'const line2 = 2;', 'Next stop @alpha/src/a.ts:L20']);
+        await waitFor('the back-link from the new note', async () => (await NotesBacklinks.read()).get(aTs().fsPath)?.some(link => link.targetLine === 19));
+      } finally {
+        fs.rmSync(notesFile, { force: true });
+      }
+    });
+
+    test('a project can keep its notes inside itself, to commit them, while other projects use your folder', async () => {
+      const alpha = vscode.workspace.workspaceFolders!.find(project => project.name === 'alpha')!;
+      const beta = vscode.workspace.workspaceFolders!.find(project => project.name === 'beta')!;
+      const settings = vscode.workspace.getConfiguration('incontext.notes', alpha.uri);
+      await settings.update('folder', '.notes', vscode.ConfigurationTarget.WorkspaceFolder);
+      try {
+        assert.strictEqual(Notes.fileFor(aTs())?.fsPath, path.join(folder('alpha'), '.notes', 'src', 'a.ts.md'));
+        assert.strictEqual(Notes.projectFolder(beta), path.join(notesFolder(), 'beta'));
+        assert.ok(Notes.isNotesFile(vscode.Uri.file(path.join(folder('alpha'), '.notes', 'src', 'a.ts.md'))));
+        assert.ok(!Notes.canHaveNotes(vscode.Uri.file(path.join(folder('alpha'), '.notes', 'src', 'a.ts.md'))), 'no notes on notes');
+      } finally {
+        await settings.update('folder', undefined, vscode.ConfigurationTarget.WorkspaceFolder);
+      }
+      assert.strictEqual(Notes.fileFor(aTs())?.fsPath, path.join(notesFolder(), 'alpha', 'src', 'a.ts.md'));
+    });
+
+    test('a note shows its lines, Move to selection, Edit, Open as Markdown and Delete at its left, for its own note', () => {
+      const note = Notes.parse(notesText)[0];
+      const thread = { uri: aTs(), range: new vscode.Range(4, 0, 6, 16) } as vscode.CommentThread;
+      const preview = new NoteComment(thread, note, []).preview();
+      const target = encodeURIComponent(JSON.stringify([aTs().toString(), 4]));
+      assert.ok(preview.value.includes(`[Lines 5–7](command:incontext.notes.selectAt?${target})`), preview.value);
+      for (const command of ['incontext.notes.selectAt', 'incontext.notes.moveAt', 'incontext.notes.editAt', 'incontext.notes.openAt', 'incontext.notes.deleteAt']) {
+        assert.ok(preview.value.includes(`(command:${command}?${target})`), preview.value);
+        assert.ok((preview.isTrusted as { enabledCommands: string[] }).enabledCommands.includes(command));
+      }
+      assert.ok(preview.value.startsWith('Defined in [@beta/b.ts:L2:3](command:incontext.openReferenceBeside?'), 'the note comes first');
+    });
+
+    test('a note on selected lines keeps its lines, and follows them when the code moves', async () => {
+      assert.strictEqual(Notes.heading(30, '  const x = 1;', 42), '## L30-L42: const x = 1;');
+      assert.strictEqual(Notes.heading(30, 'const x = 1;'), '## L30: const x = 1;');
+      const [note] = Notes.parse('## L5-L7: const line5 = 5;\nThree lines');
+      assert.deepStrictEqual([note.line, note.lines, note.anchor], [5, 3, 'const line5 = 5;']);
+      const code = fs.readFileSync(aTs().fsPath, 'utf8');
+      const moved = await vscode.workspace.openTextDocument({ content: `// one\n// two\n${code}` });
+      const range = Notes.rangeIn(moved, note);
+      assert.deepStrictEqual([range.start.line, range.end.line, range.end.character], [6, 8, 'const line7 = 7;'.length]);
+    });
+
+    test('a note typed into a box on selected lines is saved for those lines', async () => {
+      const notesFile = vscode.Uri.file(path.join(notesFolder(), 'alpha', 'src', 'a.ts.md'));
+      await vscode.workspace.openTextDocument(aTs());
+      try {
+        // A selection that ends at the start of a line leaves that line out
+        const reply = { thread: { uri: aTs(), range: new vscode.Range(11, 0, 14, 0), dispose: () => undefined }, text: 'Lines 12 to 14' };
+        await vscode.commands.executeCommand('incontext.notes.create', reply);
+        assert.ok(fs.readFileSync(notesFile.fsPath, 'utf8').endsWith('\n\n## L12-L14: const line12 = 12;\nLines 12 to 14\n'));
+      } finally {
+        fs.writeFileSync(notesFile.fsPath, notesText);
+      }
+    });
+
+    test('Move to selection moves a note to the lines selected in its file', async () => {
+      const notesFile = path.join(notesFolder(), 'alpha', 'src', 'a.ts.md');
+      const editor = await vscode.window.showTextDocument(aTs());
+      editor.selection = new vscode.Selection(19, 0, 21, 3);
+      try {
+        await waitFor('the note to move', async () => {
+          await vscode.commands.executeCommand('incontext.notes.moveAt', aTs().toString(), 4);
+          return Notes.parse(fs.readFileSync(notesFile, 'utf8'))[0].line === 20;
+        });
+        const [moved] = Notes.parse(fs.readFileSync(notesFile, 'utf8'));
+        assert.deepStrictEqual([moved.line, moved.lines, moved.anchor, moved.text], [20, 3, 'const line20 = 20;', 'Defined in @beta/b.ts:L2:3, invoked from @beta/b.ts:L10.\nSecond line.']);
+      } finally {
+        fs.writeFileSync(notesFile, notesText);
+      }
+    });
+
+    test('a note can use any Markdown, headings and #tags too', () => {
+      const withHeadings = Notes.withSection(notesText, 2, '# test\n#test\n## Details\nMore text');
+      assert.deepStrictEqual(Notes.parse(withHeadings).map(note => [note.line, note.text]), [[5, '# test\n#test\n## Details\nMore text'], [7, '']]);
+      assert.deepStrictEqual(Notes.parse(Notes.withSection(withHeadings, 2, 'Shorter')).map(note => [note.line, note.text]), [[5, 'Shorter'], [7, '']]);
+    });
+
+    test('changes one note in a notes file, or takes it out, leaving the others', () => {
+      const changed = Notes.withSection(notesText, 2, 'New text\nwith two lines');
+      assert.deepStrictEqual(Notes.parse(changed).map(note => [note.line, note.text]), [[5, 'New text\nwith two lines'], [7, '']]);
+      const removed = Notes.withSection(notesText, 2, undefined);
+      assert.deepStrictEqual(Notes.parse(removed).map(note => note.line), [7]);
+      assert.ok(removed.startsWith('# Notes on @alpha/src/a.ts\n'), 'other sections stay');
+      const added = Notes.withNote(notesText, '## L10: const line10 = 10;', 'Called by @beta/b.ts:L4');
+      assert.ok(added.endsWith('## L7\n\n## L10: const line10 = 10;\nCalled by @beta/b.ts:L4\n'), added);
+    });
+
+    test('a note typed into its box is saved to the notes file, and an edit rewrites only that note', async () => {
+      const notesFile = vscode.Uri.file(path.join(notesFolder(), 'alpha', 'src', 'a.ts.md'));
+      await vscode.workspace.openTextDocument(aTs());
+      try {
+        let disposed = false;
+        const reply = { thread: { uri: aTs(), range: new vscode.Range(9, 0, 9, 0), dispose: () => { disposed = true; } }, text: 'Called by @beta/b.ts:L4\n' };
+        await vscode.commands.executeCommand('incontext.notes.create', reply);
+        assert.ok(disposed, 'the empty box gives way to the saved note');
+        let saved = fs.readFileSync(notesFile.fsPath, 'utf8');
+        assert.ok(saved.endsWith('\n\n## L10: const line10 = 10;\nCalled by @beta/b.ts:L4\n'), saved);
+
+        const edited = { body: 'Changed in its box', file: notesFile, note: Notes.parse(saved)[0], thread: { uri: aTs(), range: new vscode.Range(4, 0, 4, 0), comments: [] }, mode: vscode.CommentMode.Editing };
+        await vscode.commands.executeCommand('incontext.notes.save', edited);
+        saved = fs.readFileSync(notesFile.fsPath, 'utf8');
+        assert.deepStrictEqual(Notes.parse(saved).map(note => [note.line, note.text]), [[5, 'Changed in its box'], [7, ''], [10, 'Called by @beta/b.ts:L4']]);
+      } finally {
+        fs.writeFileSync(notesFile.fsPath, notesText);
+      }
     });
   });
 

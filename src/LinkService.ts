@@ -1,6 +1,6 @@
 import * as crypto from 'crypto';
 import * as vscode from 'vscode';
-import { LaunchResult } from './LinkRequest';
+import { LaunchRequest, LaunchResult } from './LinkRequest';
 import { LinkPage, LinkServer } from './LinkServer';
 import { forwardToWindow, WindowEndpoint, WindowRegistry } from './LinkWindows';
 
@@ -17,7 +17,8 @@ interface Running {
 
 /**
  * Opens references from links such as http://localhost:46266/open#@project/src/file.ts:L34:43, which the
- * Claude desktop app opens in its own Browser pane (see LinkServer).
+ * Claude desktop app opens in its own Browser pane (see LinkServer). When the link was opened in a browser tab
+ * instead, the window that opens the reference comes to the front too (bringToFront).
  *
  * Every VS Code window runs this, but only one window can own the port: the first to start. It answers every link
  * and passes each one on to the window that has the reference's workspace folder (the most recently focused one if
@@ -26,16 +27,23 @@ interface Running {
  */
 export class LinkService implements vscode.Disposable {
   static readonly DEFAULT_PORT = 46266;
+  /** Path of the vscode://<extension id> URI that brings a window to the front; the extension's URI handler ignores it. */
+  static readonly FOCUS_PATH = '/focus';
   private static readonly RETRY_MS = 5000;
   private readonly id = crypto.randomUUID();
   private focusedAt = vscode.window.state.focused ? Date.now() : 0;
   private running?: Running;
   private disposed = false;
   private queue: Promise<void> = Promise.resolve();
+  /** Set while bringToFront waits, which can take as long as VS Code's "Allow ... to open this URI?" question. */
+  private focusing?: Promise<void>;
   private readonly disposables: vscode.Disposable[] = [];
 
-  /** `open` opens a reference in this window and resolves to whether it did; it shows its own errors. */
-  constructor(private readonly page: LinkPage, private readonly open: (reference: string) => Promise<boolean>, private readonly log: vscode.LogOutputChannel) {
+  /**
+   * `open` opens a reference in this window and resolves to whether it did; it shows its own errors.
+   * `extensionId` is the authority of the URI that brings the window to the front (FOCUS_PATH).
+   */
+  constructor(private readonly page: LinkPage, private readonly extensionId: string, private readonly open: (reference: string) => Promise<boolean>, private readonly log: vscode.LogOutputChannel) {
     this.disposables.push(
       vscode.workspace.onDidChangeConfiguration(event => {
         if (event.affectsConfiguration('incontext.linkServer')) {
@@ -81,7 +89,7 @@ export class LinkService implements vscode.Disposable {
       return;
     }
     const port = config.get<number>('port', LinkService.DEFAULT_PORT);
-    const endpoint = new WindowEndpoint(reference => this.openHere(reference));
+    const endpoint = new WindowEndpoint(request => this.openHere(request));
     await endpoint.listen();
     if (this.disposed) {
       await endpoint.close();
@@ -117,7 +125,7 @@ export class LinkService implements vscode.Disposable {
     if (!running || running.server || running.taking) {
       return;
     }
-    const server = new LinkServer(this.page, reference => this.route(reference));
+    const server = new LinkServer(this.page, request => this.route(request));
     running.taking = true;
     const listening = await server.listen(running.port);
     running.taking = false;
@@ -156,29 +164,55 @@ export class LinkService implements vscode.Disposable {
     }
   }
 
-  /** Opens a link the server received, in the window that has its folder. */
-  private async route(reference: string): Promise<LaunchResult> {
+  /** Opens a link the server received, in the window that has its folder, which also comes to the front if asked. */
+  private async route(request: LaunchRequest): Promise<LaunchResult> {
     const registry = this.running?.registry;
-    for (const window of WindowRegistry.choose(registry?.read() ?? [], WindowRegistry.folderOf(reference))) {
+    for (const window of WindowRegistry.choose(registry?.read() ?? [], WindowRegistry.folderOf(request.reference))) {
       if (window.id === this.id) {
         break;
       }
-      const result = await forwardToWindow(window, reference);
+      const result = await forwardToWindow(window, request);
       if (result) {
-        this.log.info(`Link server: passed ${reference} on to the window with ${window.folders.join(', ') || 'no folder'} (${result.status})`);
+        this.log.info(`Link server: passed ${request.reference} on to the window with ${window.folders.join(', ') || 'no folder'} (${result.status})`);
         return result;
       }
       // The window has gone without removing its entry
       registry?.remove(window.id);
     }
-    return this.openHere(reference);
+    return this.openHere(request);
   }
 
-  private async openHere(reference: string): Promise<LaunchResult> {
-    if (await this.open(reference)) {
-      this.log.info(`Link server: opened ${reference}`);
+  private async openHere(request: LaunchRequest): Promise<LaunchResult> {
+    if (await this.open(request.reference)) {
+      this.log.info(`Link server: opened ${request.reference}`);
+      // Not awaited: until you allow incontext to open vscode:// URIs, VS Code asks first, and the link page
+      // mustn't wait for that answer. Clicks while it asks don't ask again.
+      if (request.focus && !this.focusing) {
+        this.focusing = this.bringToFront().finally(() => {
+          this.focusing = undefined;
+        });
+      }
       return { status: 204 };
     }
     return { status: 404, message: 'VS Code could not open it. VS Code shows why.' };
+  }
+
+  /**
+   * Brings this window to the front, ahead of the browser the link was clicked in. An extension can't focus its
+   * window directly, but VS Code focuses the window a vscode://<extension id> URI went to once the extension's
+   * URI handler has taken it, even while another app is in front. asExternalUri adds a windowId to the URI, which
+   * sends it to this window rather than the most recently focused one. The URI handler ignores FOCUS_PATH.
+   */
+  private async bringToFront(): Promise<void> {
+    try {
+      const uri = await vscode.env.asExternalUri(vscode.Uri.from({ scheme: vscode.env.uriScheme, authority: this.extensionId, path: LinkService.FOCUS_PATH }));
+      if (await vscode.env.openExternal(uri)) {
+        this.log.info('Link server: brought this window to the front');
+      } else {
+        this.log.warn('Link server: VS Code did not come to the front');
+      }
+    } catch (error) {
+      this.log.warn('Link server: cannot bring VS Code to the front:', error);
+    }
   }
 }

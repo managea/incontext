@@ -21,6 +21,9 @@ import { ReferenceDecoration } from './ReferenceDecoration';
 import { ReferenceParser, ParsedReference } from './ReferenceParser';
 import { MarkdownPreview } from './MarkdownPreview';
 import { PreviewSplit } from './PreviewSplit';
+import { NotesProvider } from './Notes';
+import { NotesComments } from './NotesComments';
+import { NotesBacklinks } from './NotesBacklinks';
 import { Logger } from './Logger';
 import { LinkServer } from './LinkServer';
 import { LinkService } from './LinkService';
@@ -167,10 +170,25 @@ async function openInSplit(reference: string, from?: string, newSplit = false): 
 
 /**
  * Open a reference from outside VS Code (an AI reply in a desktop app, a vscode:// link) in the active editor group,
- * like any other file, refusing targets outside the workspace folders. Returns whether it opened.
+ * like any other file, refusing targets outside the workspace folders. When the active tab is a drawing or preview,
+ * such as an Excalidraw drawing whose link was clicked, it opens in a split beside it instead, as the Markdown
+ * preview's links do. Returns whether it opened.
  */
 async function openFromOutside(reference: string, from?: string): Promise<boolean> {
-  return await openReference(reference, from, vscode.ViewColumn.Active, true) !== undefined;
+  const beside = PreviewSplit.besideActiveViewer();
+  const opened = await openReference(reference, from, beside ?? vscode.ViewColumn.Active, true);
+  if (opened?.editor && beside !== undefined) {
+    PreviewSplit.remember(opened.editor.viewColumn);
+  }
+  return opened !== undefined;
+}
+
+/**
+ * A reference as a link that opens it in VS Code from anywhere a link can go, such as an Excalidraw drawing:
+ * vscode://<extension id>/@project/path:L34:43. The URI handler opens it like a link from outside VS Code.
+ */
+function referenceLink(extensionId: string, reference: string): string {
+  return `${vscode.env.uriScheme}://${extensionId}/${encodeURI(reference)}`;
 }
 
 /** Whether `uri` is a document open in VS Code. */
@@ -193,21 +211,22 @@ class TerminalReferenceLink extends vscode.TerminalLink {
 
 // This method is called when your extension is activated
 export function activate(context: vscode.ExtensionContext) {
-  // Inline decoration type for 'Reference copied!'
-  const referenceCopiedDecorationType = vscode.window.createTextEditorDecorationType({
+  // Inline green boxes for 'Reference copied!' and 'Link copied!'
+  const copiedDecorationType = (contentText: string) => vscode.window.createTextEditorDecorationType({
     after: {
-      contentText: 'Reference added to clipboard!',
+      contentText,
       color: '#4caf50',
       margin: '0 0 0 1em',
       fontWeight: 'bold',
       textDecoration: 'none; font-size: 1.2em; padding: 0.15em 0.7em;',
-      // backgroundColor: 'rgba(255,255,255,0.8)',
       border: '1px solid #78b37aff',
       fontStyle: 'italic',
     },
     rangeBehavior: vscode.DecorationRangeBehavior.ClosedClosed,
   });
-  context.subscriptions.push(referenceCopiedDecorationType);
+  const referenceCopiedDecorationType = copiedDecorationType('Reference added to clipboard!');
+  const linkCopiedDecorationType = copiedDecorationType('Link added to clipboard!');
+  context.subscriptions.push(referenceCopiedDecorationType, linkCopiedDecorationType);
   // Register HoverProvider and DocumentLinkProvider for code references
   const referenceProvider = new ReferenceProvider();
   context.subscriptions.push(
@@ -397,6 +416,59 @@ export function activate(context: vscode.ExtensionContext) {
     })
   );
 
+  // Copy a reference as a vscode:// link, for places that take links but not references, such as an Excalidraw
+  // drawing's element links. A click on it opens the reference with no browser in between.
+  context.subscriptions.push(
+    vscode.commands.registerCommand('incontext.copyReferenceAsLink', async (resource?: vscode.Uri) => {
+      try {
+        const editor = vscode.window.activeTextEditor;
+        // The editor's context menu passes the editor's own file: its selection decides the lines
+        const fromEditor = editor && (!(resource instanceof vscode.Uri) || resource.toString() === editor.document.uri.toString());
+        if (fromEditor) {
+          const selection = editor.selection;
+          const reference = selection.isEmpty
+            ? ReferenceUtils.createFileReference(editor.document.uri)
+            : ReferenceUtils.createCodeReference(editor.document.uri, selection);
+          await vscode.env.clipboard.writeText(referenceLink(context.extension.id, reference));
+          // The same green box as Copy Code Reference, after the selection
+          const at = selection.isEmpty ? selection.start : selection.end;
+          editor.setDecorations(linkCopiedDecorationType, [{ range: new vscode.Range(at, at), hoverMessage: 'Link copied to clipboard!' }]);
+          setTimeout(() => editor.setDecorations(linkCopiedDecorationType, []), 1200);
+          Logger.log('Reference link copied to clipboard:', reference);
+          return;
+        }
+        if (!(resource instanceof vscode.Uri)) {
+          vscode.window.showErrorMessage('Open a file, or pick one in the Explorer, to copy a link to it.');
+          return;
+        }
+        const isDirectory = ((await vscode.workspace.fs.stat(resource)).type & vscode.FileType.Directory) !== 0;
+        const reference = isDirectory ? ReferenceUtils.createDirectoryReference(resource) : ReferenceUtils.createFileReference(resource);
+        await vscode.env.clipboard.writeText(referenceLink(context.extension.id, reference));
+        // From the Explorer, the same notification as Copy File Reference
+        await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: 'Link added to clipboard' },
+          () => new Promise(resolve => setTimeout(resolve, 800)));
+        Logger.log('Reference link copied to clipboard:', reference);
+      } catch (error) {
+        vscode.window.showErrorMessage(`Failed to copy the link: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    })
+  );
+
+  // Notes on code, kept outside the code base (Notes): shown under their lines with their back-links (NotesComments)
+  const backlinks = new NotesBacklinks();
+  context.subscriptions.push(
+    backlinks,
+    new NotesComments(backlinks),
+    vscode.languages.registerHoverProvider({ scheme: 'file' }, new NotesProvider()),
+    vscode.commands.registerCommand(NotesProvider.OPEN_NOTE, async (file: string, headingLine: number) => {
+      const editor = await vscode.window.showTextDocument(vscode.Uri.parse(file, true), { viewColumn: vscode.ViewColumn.Beside });
+      const position = new vscode.Position(headingLine, 0);
+      editor.selection = new vscode.Selection(position, position);
+      editor.revealRange(new vscode.Range(position, position), vscode.TextEditorRevealType.AtTop);
+    }),
+    vscode.commands.registerCommand(NotesProvider.OPEN_BESIDE, (reference: string) => openReference(reference, undefined, vscode.ViewColumn.Beside)),
+  );
+
   // Register command to open reference (used by DocumentLinkProvider)
   context.subscriptions.push(
     vscode.commands.registerCommand('incontext.openReference', async (reference: string, from?: string) => {
@@ -408,6 +480,11 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.window.registerUriHandler({
       async handleUri(uri: vscode.Uri) {
+        if (uri.path === LinkService.FOCUS_PATH) {
+          // The link server's request to bring this window to the front (LinkService.bringToFront): VS Code
+          // focuses the window a URI went to once a URI handler takes it, so there is nothing to do here
+          return;
+        }
         const request = MarkdownPreview.parseOpenUri(uri);
         if (!request) {
           vscode.window.showErrorMessage(`Invalid reference link: ${uri.toString(true)}`);
@@ -434,7 +511,7 @@ export function activate(context: vscode.ExtensionContext) {
   const log = vscode.window.createOutputChannel('InContext', { log: true });
   context.subscriptions.push(log);
   const linkPage = LinkServer.loadPage(vscode.Uri.joinPath(context.extensionUri, 'media').fsPath, `${vscode.env.uriScheme}://${context.extension.id}`);
-  context.subscriptions.push(new LinkService(linkPage, reference => openFromOutside(reference), log));
+  context.subscriptions.push(new LinkService(linkPage, context.extension.id, reference => openFromOutside(reference), log));
 
   // Install the instruction that makes Claude Code, Copilot and Codex cite code as incontext links
   context.subscriptions.push(...AiInstructionsCommands.register(context));

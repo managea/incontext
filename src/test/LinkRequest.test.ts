@@ -52,9 +52,29 @@ suite('LinkRequest', () => {
 
   suite('checkLaunch', () => {
     test('accepts the request the link page sends', () => {
-      assert.deepStrictEqual(LinkRequest.checkLaunch(port, headers, body('@incontext/src/a.ts:L1:2')), { reference: '@incontext/src/a.ts:L1:2' });
+      assert.deepStrictEqual(LinkRequest.checkLaunch(port, headers, body('@incontext/src/a.ts:L1:2')), { reference: '@incontext/src/a.ts:L1:2', focus: false });
       const viaIp = { host: `127.0.0.1:${port}`, origin: `http://127.0.0.1:${port}`, 'x-incontext': '1' };
-      assert.deepStrictEqual(LinkRequest.checkLaunch(port, viaIp, body('@incontext/src/a.ts')), { reference: '@incontext/src/a.ts' });
+      assert.deepStrictEqual(LinkRequest.checkLaunch(port, viaIp, body('@incontext/src/a.ts')), { reference: '@incontext/src/a.ts', focus: false });
+    });
+
+    test('passes on whether VS Code should come to the front, which is no when left out', () => {
+      const withFocus = (focus: unknown) => JSON.stringify({ reference: '@incontext/src/a.ts:L1:2', focus });
+      assert.deepStrictEqual(LinkRequest.checkLaunch(port, headers, withFocus(true)), { reference: '@incontext/src/a.ts:L1:2', focus: true });
+      assert.deepStrictEqual(LinkRequest.checkLaunch(port, headers, withFocus(false)), { reference: '@incontext/src/a.ts:L1:2', focus: false });
+      assert.deepStrictEqual(LinkRequest.checkBody(withFocus(true)), { reference: '@incontext/src/a.ts:L1:2', focus: true });
+      assert.deepStrictEqual(LinkRequest.checkBody(withFocus(undefined)), { reference: '@incontext/src/a.ts:L1:2', focus: false });
+    });
+
+    test('refuses a focus that is not true or false', () => {
+      for (const focus of [null, 1, 0, 'true', 'false', '', {}, [true]]) {
+        const result = LinkRequest.checkLaunch(port, headers, JSON.stringify({ reference: '@a/b.ts', focus }));
+        assert.deepStrictEqual(result, { status: 400, message: 'Expected focus to be true or false' }, JSON.stringify(focus));
+      }
+    });
+
+    test('checks the reference before focus', () => {
+      const result = LinkRequest.checkBody(JSON.stringify({ reference: '@a/../b.ts', focus: 'yes' }));
+      assert.deepStrictEqual(result, { status: 400, message: 'Not an incontext reference' });
     });
 
     test('refuses other hosts (DNS rebinding)', () => {
@@ -83,7 +103,7 @@ suite('LinkRequest', () => {
       assert.strictEqual((LinkRequest.checkLaunch(port, headers, big) as { status: number }).status, 413);
       const json = body('@a/b.ts');
       const justFits = json + ' '.repeat(LinkRequest.MAX_BODY_BYTES - json.length);
-      assert.deepStrictEqual(LinkRequest.checkLaunch(port, headers, justFits), { reference: '@a/b.ts' });
+      assert.deepStrictEqual(LinkRequest.checkLaunch(port, headers, justFits), { reference: '@a/b.ts', focus: false });
     });
 
     test('refuses bodies that are not JSON with a reference string', () => {

@@ -6,7 +6,17 @@ export interface LaunchResult {
   message?: string;
 }
 
-export type Launch = (reference: string) => Promise<LaunchResult>;
+/** A reference to open, as the link page posts it to /launch and the owner of the port passes it on to a window. */
+export interface LaunchRequest {
+  reference: string;
+  /**
+   * Bring the VS Code window that opens the reference to the front. The link page asks for it in a browser tab,
+   * which stays in front otherwise, and not in the Claude app's Browser pane, where you stay in the app.
+   */
+  focus: boolean;
+}
+
+export type Launch = (request: LaunchRequest) => Promise<LaunchResult>;
 
 /**
  * The checks on requests to the link server (LinkServer) and the window endpoints (LinkWindows),
@@ -40,7 +50,7 @@ export class LinkRequest {
    * Checks a POST /launch request: it must come from the link page this server serves, which only that page can do.
    * Another site's page can't send the X-Incontext header without a CORS preflight, and the server refuses every one.
    */
-  static checkLaunch(port: number, headers: IncomingHttpHeaders, body: string): { reference: string } | LaunchResult {
+  static checkLaunch(port: number, headers: IncomingHttpHeaders, body: string): LaunchRequest | LaunchResult {
     if (!LinkRequest.isAllowedHost(port, headers.host)) {
       return { status: 403, message: 'Unexpected Host header' };
     }
@@ -53,21 +63,29 @@ export class LinkRequest {
     return LinkRequest.checkBody(body);
   }
 
-  /** Checks a request body: JSON of at most MAX_BODY_BYTES with a `reference` that passes isReference. */
-  static checkBody(body: string): { reference: string } | LaunchResult {
+  /**
+   * Checks a request body: JSON of at most MAX_BODY_BYTES with a `reference` that passes isReference, and an
+   * optional `focus` that is true or false (false when left out).
+   */
+  static checkBody(body: string): LaunchRequest | LaunchResult {
     if (Buffer.byteLength(body, 'utf8') > LinkRequest.MAX_BODY_BYTES) {
       return { status: 413, message: 'Request too large' };
     }
-    let reference: unknown;
+    let request: { reference?: unknown; focus?: unknown } | null;
     try {
-      reference = JSON.parse(body)?.reference;
+      request = JSON.parse(body);
     } catch {
       return { status: 400, message: 'Expected JSON' };
     }
+    const reference = request?.reference;
     if (!LinkRequest.isReference(reference)) {
       return { status: 400, message: 'Not an incontext reference' };
     }
-    return { reference };
+    const focus = request?.focus === undefined ? false : request.focus;
+    if (typeof focus !== 'boolean') {
+      return { status: 400, message: 'Expected focus to be true or false' };
+    }
+    return { reference, focus };
   }
 
   /** Reads a request body as text, or resolves to undefined once it grows past `limit` bytes. */
