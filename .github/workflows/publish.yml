@@ -73,8 +73,7 @@ jobs:
         if: ${{ !inputs.lookup-identity }}
         run: npx --yes @vscode/vsce@4.0.0 publish --azure-credential --skip-duplicate --packagePath incontext.vsix
 
-      # Off until the managea namespace is verified on Open VSX and the trusted publisher is registered;
-      # then set the marketplace environment variable OPEN_VSX_ENABLED to true
+      # Runs while the marketplace environment variable OPEN_VSX_ENABLED is true (on since 1.6.0)
       - name: Publish to Open VSX
         if: ${{ !inputs.lookup-identity && vars.OPEN_VSX_ENABLED == 'true' }}
         run: npx --yes ovsx@1.3.0 publish --skip-duplicate --packagePath incontext.vsix

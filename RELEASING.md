@@ -3,7 +3,7 @@
 Releases are published by GitHub Actions ([`.github/workflows/publish.yml`](.github/workflows/publish.yml)) when a `v*` tag is pushed. The workflow publishes to:
 
 - **Visual Studio Marketplace** (VS Code), signed in as an Azure managed identity. No token is stored anywhere, so nothing expires.
-- **Open VSX** (Cursor and other VS Code forks), with trusted publishing. No token is stored here either. This step is off until the `managea` namespace claim is approved and the trusted publisher is registered; then turn it on by setting `OPEN_VSX_ENABLED` to `true` (see the table below).
+- **Open VSX** (Cursor and other VS Code forks), with trusted publishing. No token is stored here either. It runs while the `marketplace` environment's variable `OPEN_VSX_ENABLED` is `true` (on since 1.6.0); set it to anything else to stop publishing there.
 - **GitHub Releases**: once the extension is published, the `obsidian` job builds the Obsidian plugin ([`obsidian/`](obsidian/)) and attaches its `main.js`, `manifest.json` and `styles.css` to a GitHub release for the tag, creating the release if needed. BRAT and manual installs get the plugin from there. Its version is the extension's version from `package.json`. The extension ships the same build in `dist/obsidian`, for **InContext: Install Obsidian Plugin**.
 
 ## Release a new version
@@ -68,7 +68,7 @@ Then run **Reload app without saving** from Obsidian's command palette to load t
 | GitHub environment `marketplace` | This repo: **Settings → Environments** | Holds the variables `AZURE_CLIENT_ID`, `AZURE_TENANT_ID` and `AZURE_SUBSCRIPTION_ID`, plus `OPEN_VSX_ENABLED` (set it to `true` to publish to Open VSX). Only `main` and `v*` tags can use it. |
 | Azure DevOps user | Organization `atmica` (connected to the Azure directory) | The identity is added as a **Stakeholder**, which gives it the profile the Marketplace needs. |
 | Publisher member | Marketplace publisher `managea` → **Members** | The identity is a **Contributor**, so it can publish updates. |
-| Trusted publisher | Open VSX namespace `managea` → **Trusted Publishers** | Trusts this repo's `publish.yml` workflow and `marketplace` environment. **Not set up yet:** it can be registered once the namespace claim ([#14455](https://github.com/EclipseFdn/open-vsx.org/issues/14455)) is approved. Then set `OPEN_VSX_ENABLED` to `true` and re-run the latest release to publish what Open VSX is missing. The workflow uses an `OVSX_PAT` secret instead, if one is set. |
+| Trusted publisher | Open VSX namespace `managea` → **Trusted Publishers** | Trusts this repo's `publish.yml` workflow and `marketplace` environment (registered for 1.6.0, after the namespace claim [#14455](https://github.com/EclipseFdn/open-vsx.org/issues/14455) was granted). The workflow uses an `OVSX_PAT` secret instead, if one is set. |
 
 To print the identity's Marketplace ID (needed to re-add it to the publisher), run the **Publish** workflow manually with **lookup-identity** ticked. That mode publishes nothing.
 
@@ -81,4 +81,4 @@ To print the identity's Marketplace ID (needed to re-add it to the publisher), r
 | `VSS011031: There is no profile for the authenticated user` | The identity isn't in an Azure DevOps organization connected to the Azure directory. Add it to `atmica` as a Stakeholder. |
 | Marketplace publish returns 401 or 403 | The identity isn't a member of the `managea` publisher (or lost the Contributor role). |
 | `No trusted publisher matches the presented token` (Open VSX) | Register or fix the trusted publisher on the `managea` namespace. |
-| Open VSX version shows as inactive or under review | The `managea` namespace must be verified. The ownership claim is [EclipseFdn/open-vsx.org#14455](https://github.com/EclipseFdn/open-vsx.org/issues/14455). |
+| Open VSX version shows as inactive or under review | Open VSX checks a new version before it lists it; wait a few minutes. The `managea` namespace is verified ([EclipseFdn/open-vsx.org#14455](https://github.com/EclipseFdn/open-vsx.org/issues/14455)). |
