@@ -162,12 +162,13 @@ Good to know:
 ### Drawings: Excalidraw
 
 - In an Excalidraw drawing opened in VS Code (the Excalidraw extension), a box can link to code: select the lines, run **Copy Reference as Link (for Drawings)** (<kbd>Cmd</kbd>+<kbd>Alt</kbd>+<kbd>'</kbd>, or the editor's or Explorer's context menu), then paste the link into the box's link field.
-- The link looks like `vscode://managea.incontext/@incontext/src/extension.ts:L45:83`. A click on the box's link icon opens the code beside the drawing with the lines selected, and later clicks reuse that split, as in the Markdown preview. No browser opens.
+- The link looks like `vscode://managea.incontext/@incontext/src/extension.ts:L45:83`. A click on the box's link icon opens the code beside the drawing with the lines selected, and later clicks open their files in new tabs of that split, keeping the ones already open. No browser opens.
 - Good to know:
   - Paste the link, not the bare reference: the Excalidraw extension treats a link without `vscode://` or `http://` as a file next to the drawing, and macOS then says no application can open it.
   - A `http://localhost:46266/open#@...` link works too, but it goes through your browser first.
   - Links from outside VS Code (desktop chat apps, `vscode://` links) open beside any drawing or preview that is the active tab, rather than covering it.
   - These links open files inside your workspace folders only.
+  - <kbd>Cmd</kbd>+click can't open a new split: the Excalidraw extension passes only the link to VS Code, not the keys held.
 
 ### Obsidian
 
@@ -195,6 +196,9 @@ Good to know:
 ---
 
 ## 📝 Changelog
+
+- **Unreleased**
+  - Drawings: each link opens its file in a new tab of the split beside the drawing, instead of replacing the file the last link opened
 
 - **1.6.0**
   - AI assistants can write notes on code: the instruction **InContext: Set Up AI Assistant Instructions** installs tells them how, in your notes folder, such as to map a flow when you ask. Run the command again to update the instruction, and again after changing the notes folder (incontext offers to)

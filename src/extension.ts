@@ -44,9 +44,11 @@ interface OpenedReference {
  * `from` is the document the reference was clicked in, used to resolve relative markdown link paths.
  * `viewColumn` is where a file opens: the active group for links in editors, AI replies and the terminal, a split beside the preview for preview links.
  * `workspaceOnly` refuses targets outside the workspace folders, for links from outside VS Code.
+ * `preview: false` opens a file in a tab of its own, which the next file doesn't replace; otherwise VS Code's
+ * `workbench.editor.enablePreview` decides.
  * Returns undefined when the reference could not be opened (after showing why).
  */
-async function openReference(reference: string, from?: string, viewColumn: vscode.ViewColumn = vscode.ViewColumn.Active, workspaceOnly = false): Promise<OpenedReference | undefined> {
+async function openReference(reference: string, from?: string, viewColumn: vscode.ViewColumn = vscode.ViewColumn.Active, workspaceOnly = false, preview?: boolean): Promise<OpenedReference | undefined> {
   try {
     Logger.log('Opening reference:', reference, 'from', from);
 
@@ -77,7 +79,7 @@ async function openReference(reference: string, from?: string, viewColumn: vscod
     if (parsed.isDirectory) {
       return await openDirectoryReference(targetUri) ? {} : undefined;
     }
-    return { editor: await openFileReference(targetUri, parsed, viewColumn) };
+    return { editor: await openFileReference(targetUri, parsed, viewColumn, preview) };
 
   } catch (error) {
     console.error('Failed to open reference:', reference, error);
@@ -125,7 +127,7 @@ async function openDirectoryReference(directoryUri: vscode.Uri): Promise<boolean
 /**
  * Open a file reference and select its line range
  */
-async function openFileReference(fileUri: vscode.Uri, parsed: ParsedReference, viewColumn: vscode.ViewColumn): Promise<vscode.TextEditor> {
+async function openFileReference(fileUri: vscode.Uri, parsed: ParsedReference, viewColumn: vscode.ViewColumn, preview?: boolean): Promise<vscode.TextEditor> {
   // Open the document
   const document = await vscode.workspace.openTextDocument(fileUri);
 
@@ -147,6 +149,7 @@ async function openFileReference(fileUri: vscode.Uri, parsed: ParsedReference, v
   const editor = await vscode.window.showTextDocument(document, {
     selection: selection,
     viewColumn,
+    preview,
     preserveFocus: false
   });
 
@@ -172,11 +175,12 @@ async function openInSplit(reference: string, from?: string, newSplit = false): 
  * Open a reference from outside VS Code (an AI reply in a desktop app, a vscode:// link) in the active editor group,
  * like any other file, refusing targets outside the workspace folders. When the active tab is a drawing or preview,
  * such as an Excalidraw drawing whose link was clicked, it opens in a split beside it instead, as the Markdown
- * preview's links do. Returns whether it opened.
+ * preview's links do, each file in a tab of its own: following a drawing's links keeps the files already opened.
+ * Returns whether it opened.
  */
 async function openFromOutside(reference: string, from?: string): Promise<boolean> {
   const beside = PreviewSplit.besideActiveViewer();
-  const opened = await openReference(reference, from, beside ?? vscode.ViewColumn.Active, true);
+  const opened = await openReference(reference, from, beside ?? vscode.ViewColumn.Active, true, beside === undefined ? undefined : false);
   if (opened?.editor && beside !== undefined) {
     PreviewSplit.remember(opened.editor.viewColumn);
   }

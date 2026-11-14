@@ -303,6 +303,11 @@ suite('Extension', () => {
         await waitFor('a.ts to open', () => activeFile() === path.join(folder('alpha'), 'src', 'a.ts'));
         assert.strictEqual(vscode.window.activeTextEditor!.viewColumn, split);
         assert.strictEqual(vscode.window.tabGroups.all.length, 2);
+        // Each link opens a tab of its own: the second file doesn't replace the first
+        const splitTabs = vscode.window.tabGroups.all.find(group => group.viewColumn === split)!.tabs;
+        const files = splitTabs.map(tab => (tab.input as vscode.TabInputText).uri.fsPath);
+        assert.deepStrictEqual(files, [path.join(folder('beta'), 'b.ts'), path.join(folder('alpha'), 'src', 'a.ts')]);
+        assert.ok(splitTabs.every(tab => !tab.isPreview));
       } finally {
         drawing.dispose();
       }
