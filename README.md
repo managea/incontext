@@ -197,7 +197,7 @@ Good to know:
 
 ## 📝 Changelog
 
-- **Unreleased**
+- **1.6.1**
   - Drawings: each link opens its file in a new tab of the split beside the drawing, instead of replacing the file the last link opened
 
 - **1.6.0**
