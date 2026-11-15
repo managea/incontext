@@ -25,6 +25,7 @@ import { NotesProvider } from './Notes';
 import { NotesComments } from './NotesComments';
 import { NotesBacklinks } from './NotesBacklinks';
 import { NotesTree } from './NotesTree';
+import { CallerTreeView } from './CallerTree';
 import { Logger } from './Logger';
 import { LinkServer } from './LinkServer';
 import { LinkService } from './LinkService';
@@ -459,6 +460,10 @@ export function activate(context: vscode.ExtensionContext) {
     })
   );
 
+  // The Caller Tree view in the Explorer: what reaches the function at the cursor, up to its entry points
+  const callerTree = new CallerTreeView(context);
+  context.subscriptions.push(callerTree);
+
   // Notes on code, kept outside the code base (Notes): shown under their lines with their back-links (NotesComments)
   const backlinks = new NotesBacklinks();
   const notesTree = new NotesTree(() => backlinks.notes());
@@ -547,8 +552,10 @@ export function activate(context: vscode.ExtensionContext) {
   };
   context.subscriptions.push(vscode.window.registerTerminalLinkProvider(terminalLinks));
 
-  // Picked up by the built-in Markdown preview through the markdown.markdownItPlugins contribution
+  // Picked up by the built-in Markdown preview through the markdown.markdownItPlugins contribution;
+  // callerTree is for the tests
   return {
+    callerTree,
     extendMarkdownIt(md: Parameters<typeof MarkdownPreview.extendMarkdownIt>[0]) {
       return MarkdownPreview.extendMarkdownIt(md, context.extension.id);
     }

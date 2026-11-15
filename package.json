@@ -177,6 +177,40 @@
         "command": "incontext.removeObsidianPlugin",
         "title": "Remove Obsidian Plugin",
         "category": "InContext"
+      },
+      {
+        "command": "incontext.callerTree.pin",
+        "title": "InContext: Pin Caller Tree",
+        "icon": "$(pin)"
+      },
+      {
+        "command": "incontext.callerTree.unpin",
+        "title": "InContext: Unpin Caller Tree",
+        "icon": "$(pinned)"
+      },
+      {
+        "command": "incontext.callerTree.refresh",
+        "title": "InContext: Refresh Caller Tree",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "incontext.callerTree.expand",
+        "title": "InContext: Expand Caller Tree",
+        "icon": "$(expand-all)"
+      },
+      {
+        "command": "incontext.callerTree.collapse",
+        "title": "InContext: Collapse Caller Tree",
+        "icon": "$(collapse-all)"
+      },
+      {
+        "command": "incontext.callerTree.pinAndOpen",
+        "title": "InContext: Pin and Open to the Side",
+        "icon": "$(pin)"
+      },
+      {
+        "command": "incontext.callerTree.open",
+        "title": "InContext: Open Caller Tree Row"
       }
     ],
     "keybindings": [
@@ -226,6 +260,12 @@
         "key": "ctrl+enter",
         "mac": "cmd+enter",
         "when": "commentEditorFocused && commentController == incontext.notes"
+      },
+      {
+        "command": "incontext.callerTree.pinAndOpen",
+        "key": "ctrl+enter",
+        "mac": "cmd+enter",
+        "when": "focusedView == incontext.callerTree"
       }
     ],
     "viewsContainers": {
@@ -243,6 +283,12 @@
           "id": "incontext.notes",
           "name": "Notes",
           "icon": "media/incontext-activity.svg"
+        }
+      ],
+      "explorer": [
+        {
+          "id": "incontext.callerTree",
+          "name": "InContext: Caller Tree"
         }
       ]
     },
@@ -293,6 +339,14 @@
         {
           "command": "incontext.notes.refreshView",
           "when": "false"
+        },
+        {
+          "command": "incontext.callerTree.pinAndOpen",
+          "when": "false"
+        },
+        {
+          "command": "incontext.callerTree.open",
+          "when": "false"
         }
       ],
       "view/title": [
@@ -300,6 +354,31 @@
           "command": "incontext.notes.refreshView",
           "group": "navigation",
           "when": "view == incontext.notes"
+        },
+        {
+          "command": "incontext.callerTree.pin",
+          "when": "view == incontext.callerTree && !incontext.callerTree.pinned",
+          "group": "navigation"
+        },
+        {
+          "command": "incontext.callerTree.unpin",
+          "when": "view == incontext.callerTree && incontext.callerTree.pinned",
+          "group": "navigation"
+        },
+        {
+          "command": "incontext.callerTree.expand",
+          "when": "view == incontext.callerTree && !incontext.callerTree.expanded",
+          "group": "navigation"
+        },
+        {
+          "command": "incontext.callerTree.collapse",
+          "when": "view == incontext.callerTree && incontext.callerTree.expanded",
+          "group": "navigation"
+        },
+        {
+          "command": "incontext.callerTree.refresh",
+          "when": "view == incontext.callerTree",
+          "group": "navigation"
         }
       ],
       "comments/commentThread/context": [
@@ -371,6 +450,18 @@
         },
         {
           "command": "incontext.copyReferenceAsLink",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "incontext.callerTree.pinAndOpen",
+          "when": "view == incontext.callerTree && viewItem == place",
+          "group": "inline"
+        },
+        {
+          "command": "incontext.callerTree.pinAndOpen",
+          "when": "view == incontext.callerTree && viewItem == place",
           "group": "navigation"
         }
       ]

@@ -22,6 +22,7 @@
 - **Clickable in drawings:** Excalidraw drawings in VS Code link their boxes to code with **Copy Reference as Link**; a click opens the code beside the drawing, with no browser in between.
 - **Clickable in Obsidian:** A companion Obsidian plugin, installed with one command, makes references in your notes and Mermaid diagrams open in VS Code with the lines selected.
 - **One instruction for every AI tool:** A command installs the instruction that makes Claude Code, GitHub Copilot and Codex cite code this way, and write notes on code when you ask.
+- **Caller Tree:** A view in the Explorer shows everything that reaches the function at the cursor, up to its entry points (route handlers, module code, functions nothing else calls), each row labelled with its file, such as `ReportDetails.renderArchiveGate`.
 - **Keyboard Shortcuts:** Use <kbd>Cmd</kbd>+<kbd>'</kbd> to copy references quickly.
 - **No intrusive popups:** All feedback is inline and non-blocking.
 
@@ -171,6 +172,14 @@ Good to know:
   - Links from outside VS Code (desktop chat apps, `vscode://` links) open beside any drawing or preview that is the active tab, rather than covering it.
   - These links open files inside your workspace folders only.
   - <kbd>Cmd</kbd>+click can't open a new split: the Excalidraw extension passes only the link to VS Code, not the keys held.
+
+### Caller Tree
+
+- The **InContext: Caller Tree** view in the Explorer follows the function at the cursor and shows what calls or references it, then what reaches those, up to the entry points: route handlers (`GET`, `POST` in a Next.js `route.ts`), module code, and functions nothing else references. An **Entry points** group lists them, each expanding into its chain down to the function.
+- Each row is labelled `File.function` (`ReportDetails.renderArchiveGate`), with the path and line beside it. Module code is `File (module)`; an `index`, `__init__`, `route`, `page` or `layout` file adds its folder (`feed/route.POST`); a function named like its file (a component in its own file) shows its name once.
+- A click opens the place and keeps the tree on the function you were exploring (the view says **kept**) until you move the cursor yourself. **Pin** holds it on one function; the pin icon on a row, or <kbd>Cmd</kbd>+<kbd>Enter</kbd>, pins the tree and opens the row to the side. The title bar also has expand/collapse all and refresh.
+- `ref` marks a use that is not a direct call (passed as a value, dynamic import), `seen above` a function already expanded higher up, and `NOT EXPANDED` a function the walk stopped at (12 levels, 400 functions or 20 seconds). References in test files are skipped; a function only tests use is marked `TESTS ONLY`.
+- The tree comes from the language server's references, so it needs one for the file's language (TypeScript and JavaScript out of the box). It is recomputed when the function changes or a file is saved.
 
 ### Obsidian
 

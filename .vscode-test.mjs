@@ -15,6 +15,14 @@ const lines = Array.from({ length: 30 }, (_, i) => `const line${i + 1} = ${i + 1
 write('alpha/src/a.ts', `${lines}\n`);
 write('alpha/notes.md', 'The secret: [secret](../outside/secret.txt#L1-L2)\n');
 write('beta/b.ts', `${lines}\n`);
+// A small call chain for the Caller Tree tests: main.ts (module code) -> index.render -> pricing.quote ->
+// pricing.convert -> rates.readRate
+write('alpha/calls/tsconfig.json', JSON.stringify({ compilerOptions: { strict: true }, include: ['*.ts'] }));
+write('alpha/calls/rates.ts', 'export function readRate(key: string) {\n  return key.length;\n}\n');
+write('alpha/calls/pricing.ts', "import { readRate } from './rates';\nexport function convert(x: string) {\n  return readRate(x);\n}\n"
+  + "export function quote() {\n  return convert('a');\n}\n");
+write('alpha/calls/index.ts', "import { quote } from './pricing';\nexport function render() {\n  return quote();\n}\n");
+write('alpha/calls/main.ts', "import { render } from './index';\nrender();\n");
 write('outside/secret.txt', 'secret line 1\nsecret line 2\n');
 fs.symlinkSync('src', path.join(root, 'alpha/inner'));
 fs.symlinkSync(path.join(root, 'outside'), path.join(root, 'alpha/escape'));
