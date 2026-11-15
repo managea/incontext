@@ -208,6 +208,9 @@ Good to know:
 
 ## 📝 Changelog
 
+- **1.8.0**
+  - The Caller Tree view in the Explorer: everything that reaches the function at the cursor, up to its entry points, each row labelled with its file (`ReportDetails.renderArchiveGate`). Moved here from the Agent View extension
+
 - **1.7.0**
   - The InContext view, in the activity bar: every note of the open projects as chains, each note with the notes and places it points to
   - A note's box shows above its lines (`incontext.notes.position`), and its references read as their file and lines, such as `handler.ts:L30`, the whole reference on hover
