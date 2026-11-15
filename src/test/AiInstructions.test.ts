@@ -60,6 +60,7 @@ suite('AiInstructions', () => {
     const withFolder = AiInstructions.render(template(), 46266, 'vscode', '/Users/me/Notes');
     assert.ok(withFolder.includes('The notes folder is `/Users/me/Notes` (`incontext.notes.folder` in VS Code\'s user settings).'), withFolder);
     assert.ok(withFolder.includes('`## L<line>: <that line\'s text, trimmed>`') && withFolder.includes('To map a flow, start at its entry point'));
+    assert.ok(withFolder.includes('Point forward only'), 'callers come from back-links, so a chain never loops back');
     const unset = AiInstructions.render(template(), 46266, 'vscode');
     assert.ok(!unset.includes('{{') && unset.includes('ask the user where to keep notes'));
   });

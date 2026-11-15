@@ -56,6 +56,24 @@
           "scope": "application",
           "markdownDescription": "Port of the link server (`#incontext.linkServer.enabled#`). All VS Code windows share it: the first window to start answers links and passes each one on to the window that has the reference's folder."
         },
+        "incontext.notes.position": {
+          "type": "string",
+          "enum": [
+            "above",
+            "below"
+          ],
+          "enumDescriptions": [
+            "Above the note's lines",
+            "Under the note's lines, where VS Code puts comments"
+          ],
+          "default": "above",
+          "markdownDescription": "Where a note's box shows: above its lines or under them."
+        },
+        "incontext.notes.showBackLinkNotes": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Quote the note in each back-link (`← Note on handler.ts:L30`). Off, a back-link shows only its link, and the note on hover."
+        },
         "incontext.notes.folder": {
           "type": "string",
           "default": "",
@@ -126,6 +144,11 @@
       {
         "command": "incontext.notes.cancelFocused",
         "title": "Cancel Note Edit"
+      },
+      {
+        "command": "incontext.notes.refreshView",
+        "title": "Refresh Notes",
+        "icon": "$(refresh)"
       },
       {
         "command": "incontext.notes.submitFocused",
@@ -205,8 +228,30 @@
         "when": "commentEditorFocused && commentController == incontext.notes"
       }
     ],
-    "viewsContainers": {},
-    "views": {},
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "incontext",
+          "title": "InContext",
+          "icon": "media/incontext-activity.svg"
+        }
+      ]
+    },
+    "views": {
+      "incontext": [
+        {
+          "id": "incontext.notes",
+          "name": "Notes",
+          "icon": "media/incontext-activity.svg"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "incontext.notes",
+        "contents": "No notes yet. Put the cursor on a line, or select lines, and run [InContext: Add Note](command:incontext.addNote). Notes and the places they point to show here as chains."
+      }
+    ],
     "menus": {
       "commandPalette": [
         {
@@ -244,6 +289,17 @@
         {
           "command": "incontext.notes.submitFocused",
           "when": "false"
+        },
+        {
+          "command": "incontext.notes.refreshView",
+          "when": "false"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "incontext.notes.refreshView",
+          "group": "navigation",
+          "when": "view == incontext.notes"
         }
       ],
       "comments/commentThread/context": [

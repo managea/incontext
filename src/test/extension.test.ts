@@ -13,9 +13,10 @@ import { AiInstructions } from '../AiInstructions';
 import { AiInstructionsResult } from '../AiInstructionsCommands';
 import { ObsidianPlugin } from '../ObsidianPlugin';
 import { ObsidianPluginResult } from '../ObsidianPluginCommands';
-import { Notes } from '../Notes';
+import { Notes, NotesProvider } from '../Notes';
 import { NoteComment } from '../NotesComments';
 import { NotesBacklinks } from '../NotesBacklinks';
+import { NoteNode, NotesTree } from '../NotesTree';
 import { launch, request } from './http';
 
 // Runs in the workspace .vscode-test.mjs sets up: folders alpha and beta, with ../outside next to them,
@@ -377,7 +378,8 @@ suite('Extension', () => {
       const hovers = await vscode.commands.executeCommand<vscode.Hover[]>('vscode.executeHoverProvider', aTs(), new vscode.Position(4, 3));
       const hoverText = hovers.flatMap(hover => hover.contents.map(content => typeof content === 'string' ? content : content.value)).join('\n');
       assert.match(hoverText, /Second line\./);
-      const link = /\[@beta\/b\.ts:L2:3\]\(command:(incontext\.openReferenceBeside)\?([^)]+)\)/.exec(hoverText);
+      // Read as its file and lines, with the whole reference on hover
+      const link = /\[b\.ts:L2:3\]\(command:(incontext\.openReferenceBeside)\?([^ )]+) "@beta\/b\.ts:L2:3"\)/.exec(hoverText);
       assert.ok(link, hoverText);
 
       await vscode.commands.executeCommand(link[1], ...JSON.parse(decodeURIComponent(link[2])));
@@ -392,13 +394,22 @@ suite('Extension', () => {
       assert.deepStrictEqual(links.map(link => [link.targetLine, link.targetEndLine, link.line, link.source.fsPath]), [[1, 2, 5, aTs().fsPath], [9, 9, 5, aTs().fsPath]]);
 
       const thread = { uri: bTs, range: new vscode.Range(1, 0, 2, 16) } as vscode.CommentThread;
-      const preview = new NoteComment(thread, undefined, [links[0]]).preview().value;
+      const preview = new NoteComment(thread, undefined, [links[0]], thread.range!).preview().value;
       const target = encodeURIComponent(JSON.stringify([bTs.toString(), 1]));
       assert.ok(preview.includes(`[Lines 2–3](command:incontext.notes.selectAt?${target}) · [Move to selection](command:incontext.notes.moveAt?${target}) · [Add note](command:incontext.notes.editAt?${target})`), preview);
       assert.ok(!preview.includes('incontext.notes.deleteAt'), 'nothing to delete: back-links are not stored');
-      const back = /\[← Note on a\.ts:L5\]\(command:(incontext\.notes\.goToNote)\?([^)]+)\)\n\n> /.exec(preview);
+      // By default only the link, with the note on hover
+      const back = /\[← Note on a\.ts:L5\]\(command:(incontext\.notes\.goToNote)\?([^ )]+) "Defined in @beta\/b\.ts:L2:3, invoked from @beta\/b\.ts:L10\. · Second line\."\)/.exec(preview);
       assert.ok(back, preview);
-      assert.ok(preview.includes('\n\n> Defined in @beta/b.ts:L2:3, invoked from @beta/b.ts:L10.\n> Second line.'), 'the note is quoted');
+      assert.ok(!preview.includes('> Defined in'), 'the note is not quoted');
+      const settings = vscode.workspace.getConfiguration('incontext.notes');
+      await settings.update('showBackLinkNotes', true, vscode.ConfigurationTarget.Global);
+      try {
+        const quoted = new NoteComment(thread, undefined, [links[0]], thread.range!).preview().value;
+        assert.ok(quoted.includes('\n\n> Defined in @beta/b.ts:L2:3, invoked from @beta/b.ts:L10.\n> Second line.'), quoted);
+      } finally {
+        await settings.update('showBackLinkNotes', undefined, vscode.ConfigurationTarget.Global);
+      }
       await vscode.commands.executeCommand(back[1], ...JSON.parse(decodeURIComponent(back[2])));
       await waitFor('a.ts to open at the note', () => activeFile() === aTs().fsPath);
       assert.deepStrictEqual(selectedLines(), [5, 5]);
@@ -425,7 +436,7 @@ suite('Extension', () => {
       const notesFile = path.join(notesFolder(), 'beta', 'b.ts.md');
       await vscode.workspace.openTextDocument(bTs);
       try {
-        const box = { body: 'Next stop @alpha/src/a.ts:L20', note: undefined, backLinks: [], thread: { uri: bTs, range: new vscode.Range(1, 0, 2, 16), comments: [] }, mode: vscode.CommentMode.Editing };
+        const box = { body: 'Next stop @alpha/src/a.ts:L20', note: undefined, backLinks: [], lines: new vscode.Range(1, 0, 2, 16), thread: { uri: bTs, range: new vscode.Range(0, 0, 0, 0), comments: [] }, mode: vscode.CommentMode.Editing };
         await vscode.commands.executeCommand('incontext.notes.save', box);
         const [note] = Notes.parse(fs.readFileSync(notesFile, 'utf8'));
         assert.deepStrictEqual([note.line, note.lines, note.anchor, note.text], [2, 2, 'const line2 = 2;', 'Next stop @alpha/src/a.ts:L20']);
@@ -454,14 +465,16 @@ suite('Extension', () => {
     test('a note shows its lines, Move to selection, Edit, Open as Markdown and Delete at its left, for its own note', () => {
       const note = Notes.parse(notesText)[0];
       const thread = { uri: aTs(), range: new vscode.Range(4, 0, 6, 16) } as vscode.CommentThread;
-      const preview = new NoteComment(thread, note, []).preview();
+      const preview = new NoteComment(thread, note, [], thread.range!).preview();
       const target = encodeURIComponent(JSON.stringify([aTs().toString(), 4]));
       assert.ok(preview.value.includes(`[Lines 5–7](command:incontext.notes.selectAt?${target})`), preview.value);
       for (const command of ['incontext.notes.selectAt', 'incontext.notes.moveAt', 'incontext.notes.editAt', 'incontext.notes.openAt', 'incontext.notes.deleteAt']) {
         assert.ok(preview.value.includes(`(command:${command}?${target})`), preview.value);
         assert.ok((preview.isTrusted as { enabledCommands: string[] }).enabledCommands.includes(command));
       }
-      assert.ok(preview.value.startsWith('Defined in [@beta/b.ts:L2:3](command:incontext.openReferenceBeside?'), 'the note comes first');
+      assert.ok(preview.value.startsWith('Defined in [b.ts:L2:3](command:incontext.openReferenceBeside?'), 'the note comes first, its references by file and lines');
+      assert.strictEqual(NotesProvider.shortLabel('@reports/pvoi-ui/src/ReportDetails.tsx:L78'), 'ReportDetails.tsx:L78');
+      assert.strictEqual(NotesProvider.shortLabel('@reports/pvoi-ui/src/'), 'src/');
     });
 
     test('a note on selected lines keeps its lines, and follows them when the code moves', async () => {
@@ -502,6 +515,91 @@ suite('Extension', () => {
       } finally {
         fs.writeFileSync(notesFile, notesText);
       }
+    });
+
+    test('the Notes view shows notes as chains: each note, then the notes and places it points to', async () => {
+      const bNotes = path.join(notesFolder(), 'beta', 'b.ts.md');
+      fs.mkdirSync(path.dirname(bNotes), { recursive: true });
+      fs.writeFileSync(bNotes, '## L2-L3: const line2 = 2;\n**Step 2.** Next: @alpha/src/a.ts:L7\n');
+      try {
+        const tree = new NotesTree(() => NotesBacklinks.readNotes());
+        const roots = await tree.getChildren();
+        assert.deepStrictEqual(roots.map(node => tree.getTreeItem(node).description), ['a.ts:L5'], 'only the note nothing points to starts a chain');
+        const steps = await tree.getChildren(roots[0]);
+        assert.deepStrictEqual(steps.map(node => [node.kind, tree.getTreeItem(node).label, tree.getTreeItem(node).description]), [
+          ['note', 'Step 2. Next: a.ts:L7', 'b.ts:L2'],
+          ['reference', 'b.ts:L10', 'beta/b.ts:L10'],
+        ]);
+        const last = await tree.getChildren(steps[0]);
+        assert.deepStrictEqual(last.map(node => tree.getTreeItem(node).description), ['a.ts:L7']);
+        assert.deepStrictEqual((last[0] as NoteNode).branch.length, 3);
+        assert.strictEqual(tree.getTreeItem(roots[0]).command?.command, 'incontext.notes.goToNote');
+        assert.strictEqual(tree.getTreeItem(roots[0]).command?.arguments?.[4], false, 'the view opens notes where you are');
+      } finally {
+        fs.rmSync(bNotes, { force: true });
+      }
+    });
+
+    test('a back-link goes back to the split that already shows the note, also within one file', async () => {
+      await vscode.window.showTextDocument(aTs(), { viewColumn: vscode.ViewColumn.One });
+      // The same file opened beside, as a link from a note to a later line of its own file does
+      await vscode.window.showTextDocument(aTs(), { viewColumn: vscode.ViewColumn.Two, selection: new vscode.Range(19, 0, 19, 0) });
+      const [note] = Notes.parse(notesText);
+      await vscode.commands.executeCommand('incontext.notes.goToNote', aTs().toString(), note.line, note.lines, note.anchor);
+      await waitFor('the first split to have focus', () => vscode.window.activeTextEditor?.viewColumn === vscode.ViewColumn.One);
+      assert.deepStrictEqual(selectedLines(), [5, 5]);
+      const split = vscode.window.visibleTextEditors.find(editor => editor.viewColumn === vscode.ViewColumn.Two)!;
+      assert.strictEqual(split.selection.active.line, 19, 'the split the back-link was clicked in stays where it was');
+    });
+
+    test('with three splits of one file, a back-link goes to the split showing the note, else the nearest one', async () => {
+      const [note] = Notes.parse(notesText);
+      const far = new vscode.Range(25, 0, 25, 0);
+      await vscode.window.showTextDocument(aTs(), { viewColumn: vscode.ViewColumn.One, selection: far });
+      await vscode.window.showTextDocument(aTs(), { viewColumn: vscode.ViewColumn.Two, selection: new vscode.Range(4, 0, 4, 0) });
+      await vscode.window.showTextDocument(aTs(), { viewColumn: vscode.ViewColumn.Three, selection: far });
+      await vscode.commands.executeCommand('incontext.notes.goToNote', aTs().toString(), note.line, note.lines, note.anchor);
+      await waitFor('the split showing the note to have focus', () => vscode.window.activeTextEditor?.viewColumn === vscode.ViewColumn.Two);
+      assert.deepStrictEqual(selectedLines(), [5, 5]);
+    });
+
+    test('a back-link to a file no split shows opens it to the left; the InContext view opens it where you are', async () => {
+      const [note] = Notes.parse(notesText);
+      const bTs = vscode.Uri.file(path.join(folder('beta'), 'b.ts'));
+      const columnOf = (file: string) => vscode.window.visibleTextEditors.find(editor => editor.document.uri.fsPath === file)?.viewColumn;
+      // From the leftmost split: a new split on the left
+      await vscode.window.showTextDocument(bTs, { viewColumn: vscode.ViewColumn.One });
+      await vscode.commands.executeCommand('incontext.notes.goToNote', aTs().toString(), note.line, note.lines, note.anchor);
+      await waitFor('a.ts to open on the left', () => activeFile() === aTs().fsPath);
+      assert.deepStrictEqual([columnOf(aTs().fsPath), columnOf(bTs.fsPath)], [vscode.ViewColumn.One, vscode.ViewColumn.Two]);
+      assert.deepStrictEqual(selectedLines(), [5, 5]);
+
+      // A note on an earlier line of the same file, from the leftmost split: the new split on the left shows it
+      await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+      await vscode.window.showTextDocument(aTs(), { viewColumn: vscode.ViewColumn.One, selection: new vscode.Range(25, 0, 25, 0) });
+      await vscode.commands.executeCommand('incontext.notes.goToNote', aTs().toString(), note.line, note.lines, note.anchor);
+      await waitFor('two splits of a.ts', () => vscode.window.visibleTextEditors.filter(editor => editor.document.uri.fsPath === aTs().fsPath).length === 2);
+      assert.strictEqual(vscode.window.activeTextEditor!.viewColumn, vscode.ViewColumn.One);
+      assert.deepStrictEqual(selectedLines(), [5, 5]);
+      const right = vscode.window.visibleTextEditors.find(editor => editor.viewColumn === vscode.ViewColumn.Two)!;
+      assert.strictEqual(right.selection.active.line, 25, 'the split the back-link was clicked in stays where it was');
+
+      // From a split with one on its left: there, in a tab of its own
+      await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+      const notes = vscode.Uri.file(path.join(folder('alpha'), 'notes.md'));
+      await vscode.window.showTextDocument(notes, { viewColumn: vscode.ViewColumn.One });
+      await vscode.window.showTextDocument(bTs, { viewColumn: vscode.ViewColumn.Two });
+      await vscode.commands.executeCommand('incontext.notes.goToNote', aTs().toString(), note.line, note.lines, note.anchor);
+      await waitFor('a.ts to open on the left', () => activeFile() === aTs().fsPath);
+      assert.strictEqual(columnOf(aTs().fsPath), vscode.ViewColumn.One);
+      const leftTabs = vscode.window.tabGroups.all.find(group => group.viewColumn === vscode.ViewColumn.One)!.tabs;
+      assert.ok(leftTabs.some(tab => (tab.input as vscode.TabInputText).uri.fsPath === notes.fsPath), 'the file there stays open');
+
+      await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+      await vscode.window.showTextDocument(bTs, { viewColumn: vscode.ViewColumn.One });
+      await vscode.commands.executeCommand('incontext.notes.goToNote', aTs().toString(), note.line, note.lines, note.anchor, false);
+      await waitFor('a.ts to open', () => activeFile() === aTs().fsPath);
+      assert.ok(inOneGroup());
     });
 
     test('a note can use any Markdown, headings and #tags too', () => {

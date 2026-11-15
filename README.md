@@ -97,7 +97,7 @@
   - The notes on a file are in `<notes folder>/<folder>/<path>.md` (or `<project>/<relative folder>/<path>.md` for a project's own folder), with <folder> and <path> as in references. If the file doesn't exist, create it with the first line `# Notes on @<folder>/<path>`.
   - Each note is a section: a heading `## L<line>: <that line's text, trimmed>`, or `## L<start>-L<end>: <the first line's text, trimmed>` for several lines, then the note in Markdown. Copy the line's text exactly: incontext finds the note's lines by it when the code moves. Add your notes to a file's notes; don't change notes you didn't write.
   - In a note, refer to the places it connects with plain references, such as @incontext/src/extension.ts:L36:68. Each place a note points to shows a back-link to the note in VS Code.
-  - To map a flow, start at its entry point and follow it: one note on each step's lines (a handler, the template that defines it, the API that calls it, the table it reads), saying what the step does, with a reference to the next step. The back-links then chain the flow both ways.
+  - To map a flow, start at its entry point and follow it: one note on each step's lines (a handler, the template that defines it, the API that calls it, the table it reads), saying what the step does, with a reference to the next step. Point forward only: refer to the next step and to what a step uses, never to the step before it or to its callers, because each step already shows a back-link to the note that leads to it. Where two paths meet, each path's step points to the shared one. The notes then chain the flow forward, and the back-links lead back.
   ```
   <!-- ai-instructions:end -->
 
@@ -139,15 +139,17 @@ Link places in your code base without changing it, such as a Lambda handler and 
 ![A note under a Lambda handler, with links to the template that defines it and the API that calls it](media/notes-note.png)
 
 - **Add a note:** click the **+** beside a line (as for a review comment), or put the cursor on the line, or select several lines, and press <kbd>Cmd</kbd>+<kbd>Alt</kbd>+<kbd>N</kbd> (**InContext: Add Note**, also in the editor's context menu). Type the note in Markdown, pasting references copied with <kbd>Cmd</kbd>+<kbd>'</kbd>, and press <kbd>Cmd</kbd>+<kbd>Enter</kbd>. The first time, choose a folder for your notes, outside your repositories so they are never committed.
-- **Read it:** a click on a reference opens it beside the code. Hovering over the line shows the note too, also when you have closed its box.
+- **Read it:** references read as their file and lines, such as `handler.ts:L30`; hover for the whole reference, and click to open it beside the code. Hovering over the line shows the note too, also when you have closed its box. The box shows above its lines (`incontext.notes.position`: `below` puts it under them).
 - **Change it:** under each box, **Lines 11–25** selects the lines it covers, **Move to selection** moves it to the lines you have selected (how a note moves up or down, or covers other lines), and **Edit**, **Open as Markdown** and **Delete** do what they say. <kbd>Cmd</kbd>+<kbd>Alt</kbd>+<kbd>N</kbd> on the line edits it too; <kbd>Cmd</kbd>+<kbd>Enter</kbd> saves and <kbd>Esc</kbd> cancels.
 
-**Back-links** lead the other way. The lines a note points to show `← Note on handler.ts:L7`, with the note quoted, a click back to it. They join the note's box when those lines have a note of their own, and otherwise get a box of their own with **Add note**, so a note there can point on, and you can follow a flow as a chain:
+**Back-links** lead the other way. The lines a note points to show `← Note on handler.ts:L7`, a click back to it (in a split to the left, as links to the next step open to the right), with the note on hover (`incontext.notes.showBackLinkNotes` quotes it in the box too). They join the note's box when those lines have a note of their own, and otherwise get a box of their own with **Add note**, so a note there can point on, and you can follow a flow as a chain:
 
 ![The template shows the handler's note as a back-link, its own note pointing on to the orders table, and the table's back-link](media/notes-backlinks.png)
 
 - If the lines a note points to have drifted, select the right ones and choose **Move to selection** in the box there: the note's reference is corrected.
 - Back-links are worked out from your notes, never stored.
+
+**The InContext view** (the InContext icon in the activity bar; drag it into the Explorer if you prefer) shows every note of the projects open in the window as chains: a chain starts at a note no other note points to, and under each note are the places it points to, a place with a note of its own opening into that note's links, step by step. A click opens a note at its lines, or a reference.
 
 **Let your AI assistant write them.** The instruction **InContext: Set Up AI Assistant Instructions** installs (see [Use one instruction in every AI tool](#use-one-instruction-in-every-ai-tool)) tells Claude Code, GitHub Copilot and Codex how to write notes, in your notes folder. Ask for them when you want them, for example *"Map the GetOrder flow with notes, from the handler to the table it reads"*, or *"add notes linking the places you change"* as it codes. The notes and their back-links then show the flow in VS Code, step by step.
 
@@ -196,6 +198,12 @@ Good to know:
 ---
 
 ## 📝 Changelog
+
+- **Unreleased**
+  - The InContext view, in the activity bar: every note of the open projects as chains, each note with the notes and places it points to
+  - A note's box shows above its lines (`incontext.notes.position`), and its references read as their file and lines, such as `handler.ts:L30`, the whole reference on hover
+  - Back-links show only their link, with the note on hover; `incontext.notes.showBackLinkNotes` quotes the note in the box again
+  - Flows read left to right: a link to the next step opens in a split to the right, and a back-link opens its note in a split to the left (made if needed), or goes back to the split that already shows it (with several, the nearest one), also within one file
 
 - **1.6.1**
   - Drawings: each link opens its file in a new tab of the split beside the drawing, instead of replacing the file the last link opened

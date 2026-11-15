@@ -24,6 +24,7 @@ import { PreviewSplit } from './PreviewSplit';
 import { NotesProvider } from './Notes';
 import { NotesComments } from './NotesComments';
 import { NotesBacklinks } from './NotesBacklinks';
+import { NotesTree } from './NotesTree';
 import { Logger } from './Logger';
 import { LinkServer } from './LinkServer';
 import { LinkService } from './LinkService';
@@ -460,9 +461,20 @@ export function activate(context: vscode.ExtensionContext) {
 
   // Notes on code, kept outside the code base (Notes): shown under their lines with their back-links (NotesComments)
   const backlinks = new NotesBacklinks();
+  const notesTree = new NotesTree(() => backlinks.notes());
+  const notesView = vscode.window.createTreeView(NotesTree.VIEW, { treeDataProvider: notesTree, showCollapseAll: true });
   context.subscriptions.push(
     backlinks,
     new NotesComments(backlinks),
+    notesTree,
+    notesView,
+    // Shown again, the view reads the notes again: they can change while it is hidden
+    notesView.onDidChangeVisibility(event => event.visible && backlinks.refresh()),
+    backlinks.onDidChange(() => notesTree.refresh()),
+    vscode.commands.registerCommand('incontext.notes.refreshView', () => {
+      backlinks.refresh();
+      notesTree.refresh();
+    }),
     vscode.languages.registerHoverProvider({ scheme: 'file' }, new NotesProvider()),
     vscode.commands.registerCommand(NotesProvider.OPEN_NOTE, async (file: string, headingLine: number) => {
       const editor = await vscode.window.showTextDocument(vscode.Uri.parse(file, true), { viewColumn: vscode.ViewColumn.Beside });

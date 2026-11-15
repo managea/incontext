@@ -15,7 +15,8 @@ export class NoteComment implements vscode.Comment {
   mode = vscode.CommentMode.Preview;
   body: string | vscode.MarkdownString;
 
-  constructor(readonly thread: vscode.CommentThread, readonly note: Note | undefined, readonly backLinks: BackLink[]) {
+  /** `lines` are the lines the box is about; the thread may sit on the line above them (NotesComments.anchor). */
+  constructor(readonly thread: vscode.CommentThread, readonly note: Note | undefined, readonly backLinks: BackLink[], public lines: vscode.Range) {
     this.body = this.preview();
   }
 
@@ -24,20 +25,24 @@ export class NoteComment implements vscode.Comment {
    * own buttons at the far right, which is a long way on a wide editor.
    */
   preview(): vscode.MarkdownString {
-    const range = this.thread.range;
-    const target = encodeURIComponent(JSON.stringify([this.thread.uri.toString(), range?.start.line ?? 0]));
+    const range = this.lines;
+    const target = encodeURIComponent(JSON.stringify([this.thread.uri.toString(), range.start.line]));
     // The lines the box covers, a link that selects them: VS Code's own marking of them is faint
-    const lines = !range ? 'Lines' : range.end.line > range.start.line ? `Lines ${range.start.line + 1}–${range.end.line + 1}` : `Line ${range.start.line + 1}`;
+    const lines = range.end.line > range.start.line ? `Lines ${range.start.line + 1}–${range.end.line + 1}` : `Line ${range.start.line + 1}`;
+    const showNotes = vscode.workspace.getConfiguration('incontext.notes').get<boolean>('showBackLinkNotes', false);
     // Plain words: VS Code's comment box doesn't line icons up with the text beside them
     const actions = this.note
       ? [[lines, NotesComments.SELECT_AT], ['Move to selection', NotesComments.MOVE_AT], ['Edit', NotesComments.EDIT_AT], ['Open as Markdown', NotesComments.OPEN_AT], ['Delete', NotesComments.DELETE_AT]]
       : [[lines, NotesComments.SELECT_AT], ['Move to selection', NotesComments.MOVE_AT], ['Add note', NotesComments.EDIT_AT]];
     const sections = [
-      // Each note that points here, quoted under a link back to it
+      // Each note that points here, a link back to it, with the note quoted under it if the setting says so
       this.backLinks.map(link => {
+        // The note on hover, on one line: a link's title can't hold a blank line
+        const title = link.text.split('\n').map(line => line.trim()).filter(Boolean).join(' · ').replace(/"/g, '&quot;');
+        const back = `[← Note on ${link.source.path.split('/').pop()}:L${link.line}](${NotesBacklinks.goToNoteLink(link)} "${title}")`;
         const quote = (link.text || '_Empty note_').split('\n').map(line => `> ${line}`).join('\n');
-        return `[← Note on ${link.source.path.split('/').pop()}:L${link.line}](${NotesBacklinks.goToNoteLink(link)})\n\n${quote}`;
-      }).join('\n\n'),
+        return showNotes ? `${back}\n\n${quote}` : back;
+      }).join(showNotes ? '\n\n' : '  \n'),
       // This box's own note, under the notes that point here
       this.note ? NotesProvider.linkReferences(this.note.text || '_Empty note_') : '',
       actions.map(([title, command]) => `[${title}](command:${command}?${target})`).join(' · '),
@@ -189,10 +194,18 @@ export class NotesComments implements vscode.Disposable {
 
   /** Selects and reveals the lines a box covers. */
   private static async select(thread: vscode.CommentThread): Promise<void> {
-    if (thread.range) {
-      const editor = await vscode.window.showTextDocument(thread.uri, { selection: thread.range, preserveFocus: false });
-      editor.revealRange(thread.range, vscode.TextEditorRevealType.InCenterIfOutsideViewport);
-    }
+    const { lines } = thread.comments[0] as NoteComment;
+    const editor = await vscode.window.showTextDocument(thread.uri, { selection: lines, preserveFocus: false });
+    editor.revealRange(lines, vscode.TextEditorRevealType.InCenterIfOutsideViewport);
+  }
+
+  /**
+   * Where a box sits. VS Code draws a comment box after its thread's last line, so a box above its lines (the
+   * setting's default) belongs to the line before them; on a file's first line it can only go below.
+   */
+  static anchor(lines: vscode.Range): vscode.Range {
+    const above = vscode.workspace.getConfiguration('incontext.notes').get<string>('position', 'above') === 'above';
+    return above && lines.start.line > 0 ? new vscode.Range(lines.start.line - 1, 0, lines.start.line - 1, 0) : lines;
   }
 
   /**
@@ -201,7 +214,7 @@ export class NotesComments implements vscode.Disposable {
    * how a reference whose lines have drifted is put right from where it points, without writing anything again.
    */
   private async moveToSelection(thread: vscode.CommentThread): Promise<void> {
-    const { note, backLinks } = thread.comments[0] as NoteComment;
+    const { note, backLinks, lines } = thread.comments[0] as NoteComment;
     const editor = vscode.window.visibleTextEditors.find(visible => visible.document.uri.toString() === thread.uri.toString());
     if (!editor) {
       vscode.window.showInformationMessage('Select the lines in the file first, then choose Move to selection.');
@@ -216,7 +229,7 @@ export class NotesComments implements vscode.Disposable {
     }
     // A back-link that points at only part of a note's lines keeps pointing there
     const pointed = ReferenceUtils.createCodeReference(editor.document.uri, new vscode.Selection(start.line, 0, last, 0));
-    for (const link of backLinks.filter(candidate => candidate.targetLine === thread.range?.start.line && candidate.targetEndLine === thread.range.end.line)) {
+    for (const link of backLinks.filter(candidate => candidate.targetLine === lines.start.line && candidate.targetEndLine === lines.end.line)) {
       const text = await Notes.read(link.notesFile);
       const pointing = text === undefined ? undefined : Notes.parse(text).find(candidate => candidate.headingLine === link.headingLine);
       if (text !== undefined && pointing) {
@@ -262,7 +275,7 @@ export class NotesComments implements vscode.Disposable {
     comment.mode = vscode.CommentMode.Preview;
     this.editing = undefined;
     if (!comment.note) {
-      if (!await this.addToNotesFile(comment.thread.uri, comment.thread.range, text)) {
+      if (!await this.addToNotesFile(comment.thread.uri, comment.lines, text)) {
         this.cancelEdit(comment);
       }
       return;
@@ -315,7 +328,7 @@ export class NotesComments implements vscode.Disposable {
   }
 
   private threadAt(file: string, line: number): vscode.CommentThread | undefined {
-    return this.threads.get(file)?.find(thread => thread.range?.start.line === line);
+    return this.threads.get(file)?.find(thread => (thread.comments[0] as NoteComment).lines.start.line === line);
   }
 
   /** After a source file changes, moves its notes to follow their lines, a moment after the typing stops. */
@@ -335,8 +348,9 @@ export class NotesComments implements vscode.Disposable {
     for (const thread of this.threads.get(document.uri.toString()) ?? []) {
       const comment = thread.comments[0] as NoteComment;
       const range = comment.note && Notes.rangeIn(document, comment.note);
-      if (range && !thread.range?.isEqual(range)) {
-        thread.range = range;
+      if (range && !comment.lines.isEqual(range)) {
+        comment.lines = range;
+        thread.range = NotesComments.anchor(range);
         // The box's Lines link names its lines
         if (comment.mode === vscode.CommentMode.Preview) {
           comment.body = comment.preview();
@@ -385,7 +399,7 @@ export class NotesComments implements vscode.Disposable {
     }
 
     for (const thread of old) {
-      const threadKey = `${key}|${thread.range?.start.line}`;
+      const threadKey = `${key}|${(thread.comments[0] as NoteComment).lines.start.line}`;
       if (thread.collapsibleState === vscode.CommentThreadCollapsibleState.Collapsed) {
         this.closed.add(threadKey);
       } else {
@@ -394,8 +408,8 @@ export class NotesComments implements vscode.Disposable {
       thread.dispose();
     }
     const threads = boxes.map(({ range, note, backLinks }) => {
-      const thread = this.controller.createCommentThread(document.uri, range, []);
-      thread.comments = [new NoteComment(thread, note, backLinks)];
+      const thread = this.controller.createCommentThread(document.uri, NotesComments.anchor(range), []);
+      thread.comments = [new NoteComment(thread, note, backLinks, range)];
       thread.canReply = false;
       thread.contextValue = note ? NotesComments.NOTE : NotesComments.BACKLINKS;
       thread.label = NotesComments.LABEL;

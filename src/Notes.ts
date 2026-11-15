@@ -243,10 +243,19 @@ export class NotesProvider implements vscode.HoverProvider {
     let linked = '';
     let last = 0;
     for (const match of ReferenceParser.findReferences(text)) {
-      linked += `${text.slice(last, match.start)}[${match.reference}](${NotesProvider.commandLink(NotesProvider.OPEN_BESIDE, [match.reference])})`;
+      // Read as its file and lines; the whole reference shows on hover, and in the note's raw text
+      const link = NotesProvider.commandLink(NotesProvider.OPEN_BESIDE, [match.reference]);
+      linked += `${text.slice(last, match.start)}[${NotesProvider.shortLabel(match.reference)}](${link} "${match.reference.replace(/"/g, '&quot;')}")`;
       last = match.end;
     }
     return linked + text.slice(last);
+  }
+
+  /** A reference by its file and lines, as a note shows it: `@reports/src/a/handler.ts:L30` reads `handler.ts:L30`. */
+  static shortLabel(reference: string): string {
+    const folder = reference.endsWith('/');
+    const parts = reference.replace(/^@/, '').replace(/\/$/, '').split('/');
+    return `${parts[parts.length - 1]}${folder ? '/' : ''}`;
   }
 
   private static commandLink(command: string, args: unknown[]): string {
