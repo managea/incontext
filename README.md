@@ -199,7 +199,7 @@ Good to know:
 
 ## 📝 Changelog
 
-- **Unreleased**
+- **1.7.0**
   - The InContext view, in the activity bar: every note of the open projects as chains, each note with the notes and places it points to
   - A note's box shows above its lines (`incontext.notes.position`), and its references read as their file and lines, such as `handler.ts:L30`, the whole reference on hover
   - Back-links show only their link, with the note on hover; `incontext.notes.showBackLinkNotes` quotes the note in the box again
