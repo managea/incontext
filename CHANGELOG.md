@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.1.2 (pre-release)
 
 - The Caller Tree colours each function's name and icon by its file, so rows in the same file share a colour and rows in other files stand out. Each row is now the function's name, then its file and line, dimmer (`renderArchiveGate  ReportDetails.tsx:212`), instead of `File.function`. `incontext.callerTree.colorByFile` turns the colours off
 - **Fold calls within a file**, a new button in the Caller Tree's title bar, leaves out callers in the same file as the function they call and lists their own callers in their place, marked `via` the function left out: the tree shows only the steps from one file to another

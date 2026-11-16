@@ -3,7 +3,7 @@
   "displayName": "Code Reference Extension",
   "description": "Read, check and steer the code your AI agents write: pinpoint code references, notes on code, the callers of any function, and every change since main, a click from the lines they are about.",
   "publisher": "managea",
-  "version": "2.1.1",
+  "version": "2.1.2",
   "icon": "icon.png",
   "license": "MIT",
   "repository": {
@@ -43,42 +43,82 @@
       {
         "id": "incontext.callerTree.file1",
         "description": "Caller Tree: the blue given to the first file a tree meets (the root's file is the first).",
-        "defaults": { "dark": "#3794FF", "light": "#1A85FF", "highContrast": "#3794FF", "highContrastLight": "#1A85FF" }
+        "defaults": {
+          "dark": "#3794FF",
+          "light": "#1A85FF",
+          "highContrast": "#3794FF",
+          "highContrastLight": "#1A85FF"
+        }
       },
       {
         "id": "incontext.callerTree.file2",
         "description": "Caller Tree: the orange given to the second file a tree meets (the root's file is the first).",
-        "defaults": { "dark": "#D18616", "light": "#B26B00", "highContrast": "#D18616", "highContrastLight": "#B26B00" }
+        "defaults": {
+          "dark": "#D18616",
+          "light": "#B26B00",
+          "highContrast": "#D18616",
+          "highContrastLight": "#B26B00"
+        }
       },
       {
         "id": "incontext.callerTree.file3",
         "description": "Caller Tree: the purple given to the third file a tree meets (the root's file is the first).",
-        "defaults": { "dark": "#B180D7", "light": "#8E4BC4", "highContrast": "#B180D7", "highContrastLight": "#8E4BC4" }
+        "defaults": {
+          "dark": "#B180D7",
+          "light": "#8E4BC4",
+          "highContrast": "#B180D7",
+          "highContrastLight": "#8E4BC4"
+        }
       },
       {
         "id": "incontext.callerTree.file4",
         "description": "Caller Tree: the green given to the fourth file a tree meets (the root's file is the first).",
-        "defaults": { "dark": "#89D185", "light": "#388A34", "highContrast": "#89D185", "highContrastLight": "#388A34" }
+        "defaults": {
+          "dark": "#89D185",
+          "light": "#388A34",
+          "highContrast": "#89D185",
+          "highContrastLight": "#388A34"
+        }
       },
       {
         "id": "incontext.callerTree.file5",
         "description": "Caller Tree: the red given to the fifth file a tree meets (the root's file is the first).",
-        "defaults": { "dark": "#F48771", "light": "#C72E0F", "highContrast": "#F48771", "highContrastLight": "#C72E0F" }
+        "defaults": {
+          "dark": "#F48771",
+          "light": "#C72E0F",
+          "highContrast": "#F48771",
+          "highContrastLight": "#C72E0F"
+        }
       },
       {
         "id": "incontext.callerTree.file6",
         "description": "Caller Tree: the yellow given to the sixth file a tree meets (the root's file is the first).",
-        "defaults": { "dark": "#DCDCAA", "light": "#8C7400", "highContrast": "#DCDCAA", "highContrastLight": "#8C7400" }
+        "defaults": {
+          "dark": "#DCDCAA",
+          "light": "#8C7400",
+          "highContrast": "#DCDCAA",
+          "highContrastLight": "#8C7400"
+        }
       },
       {
         "id": "incontext.callerTree.file7",
         "description": "Caller Tree: the pink given to the seventh file a tree meets (the root's file is the first).",
-        "defaults": { "dark": "#E07EC2", "light": "#B5368B", "highContrast": "#E07EC2", "highContrastLight": "#B5368B" }
+        "defaults": {
+          "dark": "#E07EC2",
+          "light": "#B5368B",
+          "highContrast": "#E07EC2",
+          "highContrastLight": "#B5368B"
+        }
       },
       {
         "id": "incontext.callerTree.file8",
         "description": "Caller Tree: the teal given to the eighth file a tree meets (the root's file is the first).",
-        "defaults": { "dark": "#4EC9B0", "light": "#00808A", "highContrast": "#4EC9B0", "highContrastLight": "#00808A" }
+        "defaults": {
+          "dark": "#4EC9B0",
+          "light": "#00808A",
+          "highContrast": "#4EC9B0",
+          "highContrastLight": "#00808A"
+        }
       }
     ],
     "configuration": {
