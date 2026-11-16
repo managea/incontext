@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.1.0 (pre-release)
+
+- Pre-releases: versions with an odd minor (2.1.x) go to the Marketplace and Open VSX as pre-releases, which only installs that choose **Switch to Pre-Release Version** get
+- **Branch Changes** looks like the Explorer: each file's status letter sits at the right edge and its name takes git's colours (added, modified, deleted, renamed, untracked), with a dot on the folders above. A renamed file shows its old name beside it
+- No more grey bar down the gutter of every file. It came with the **+** that adds a note beside a line, which is now off by default: add notes with **InContext: Add Note** (`Cmd+Alt+N`) or the editor's context menu, or turn the **+** back on with `incontext.notes.gutterAddButton`
+- **Branch Changes** follows the editor, as the Explorer does: the file you switch to is revealed and selected in the list when it has changes. The eye button in the view's title bar turns it off, and on again
+
 ## 2.0.0
 
 - Compare with a branch: pick a branch (**InContext: Compare with Branch…** or the status bar), and every editor's gutter marks what differs from it, uncommitted edits included, with the inline diff on a click. The **Branch Changes** view lists the changed files as a tree: a click opens the file, its diff icon the side-by-side diff. Compares from the merge-base, as a merge request does, or with the branch's tip; each repository of the window has its own branch

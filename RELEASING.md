@@ -6,9 +6,13 @@ Releases are published by GitHub Actions ([`.github/workflows/publish.yml`](.git
 - **Open VSX** (Cursor and other VS Code forks), with trusted publishing. No token is stored here either. It runs while the `marketplace` environment's variable `OPEN_VSX_ENABLED` is `true` (on since 1.6.0); set it to anything else to stop publishing there.
 - **GitHub Releases**: once the extension is published, the `obsidian` job builds the Obsidian plugin ([`obsidian/`](obsidian/)) and attaches its `main.js`, `manifest.json` and `styles.css` to a GitHub release for the tag, creating the release if needed. BRAT and manual installs get the plugin from there. Its version is the extension's version from `package.json`. The extension ships the same build in `dist/obsidian`, for **InContext: Install Obsidian Plugin**.
 
+## Versions
+
+Releases use **even** minor versions (`2.0.x`, `2.2.0`) and [pre-releases](#publish-a-pre-release) **odd** ones (`2.1.0`, `2.1.1`, …), as the Marketplace recommends, since it has no `-beta` style versions: a pre-release then never takes a version a release needs. The **Publish** workflow refuses a tag that breaks this.
+
 ## Release a new version
 
-1. Update the version (no tag yet):
+1. Update the version (no tag yet). After pre-releases on `2.1.x`, the release is the next even minor, `2.2.0`:
 
    ```bash
    npm version 1.2.0 --no-git-tag-version
@@ -35,6 +39,24 @@ Releases are published by GitHub Actions ([`.github/workflows/publish.yml`](.git
    Obsidian plugin: the tag's release under <https://github.com/managea/incontext/releases> has `main.js`, `manifest.json` and `styles.css`.
 
 Installed copies update on their own once the version is live. Only copies installed from the Marketplace auto-update, not ones installed from a `.vsix`. Switch a machine back with `code --install-extension managea.incontext --force`.
+
+## Publish a pre-release
+
+A pre-release is published to the Marketplace and Open VSX like a release, but only installs that chose **Switch to Pre-Release Version** on the extension (Extensions view → InContext) get it, and they then update to each new pre-release on their own. Everyone else stays on the latest release. Use it to try changes on another machine, such as a bigger code base at work, before releasing them.
+
+Run **`/pre-release`** in Claude Code (`.claude/skills/pre-release`), optionally with a version. It picks the next odd-minor version, tests, moves the changelog's **Unreleased** entries under it, commits, tags `vX.Y.Z-pre`, pushes and watches the publish. By hand:
+
+```bash
+npm version 2.1.0 --no-git-tag-version   # odd minor
+# CHANGELOG.md: "## Unreleased" becomes "## 2.1.0 (pre-release)"
+git commit -am "Pre-release 2.1.0"
+git tag v2.1.0-pre
+git push origin main v2.1.0-pre
+```
+
+The `-pre` tag makes the workflow package and publish with `--pre-release`. It makes no GitHub release, so the Obsidian plugin (BRAT and manual installs take the latest GitHub release) stays on the last release.
+
+When the pre-releases are ready, release them as the next even minor (`2.2.0`), with their changelog entries gathered under it.
 
 ### If a release fails
 

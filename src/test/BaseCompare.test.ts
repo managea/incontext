@@ -2,7 +2,7 @@ import * as assert from 'assert';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { BaseCompare, BaseContent, Git, RepoCompare } from '../BaseCompare';
-import { BaseCompareTree, TreeNode } from '../BaseCompareTree';
+import { BaseCompareDecorations, BaseCompareTree, TreeNode } from '../BaseCompareTree';
 import { BaseCompareGutter, GitGutterSwap } from '../BaseCompareGutter';
 
 // Runs in the workspace .vscode-test.mjs sets up: beta/shop and beta/tools are git repositories on branch feature,
@@ -41,7 +41,7 @@ suite('Compare with Branch', () => {
   test('a repository compared with main shows what a merge request would, then the tip, in the tree and the gutter',
     async function () {
       this.timeout(90_000);
-      const api = await vscode.extensions.getExtension('managea.incontext')!.activate() as { compareWithBranch: BaseCompare };
+      const api = await vscode.extensions.getExtension('managea.incontext')!.activate() as { compareWithBranch: BaseCompare; branchChangesView: vscode.TreeView<TreeNode> };
       const compare = api.compareWithBranch;
       const beta = vscode.workspace.workspaceFolders!.find(folder => folder.name === 'beta')!.uri;
       const shop = vscode.Uri.joinPath(beta, 'shop');
@@ -76,7 +76,20 @@ suite('Compare with Branch', () => {
         assert.deepStrictEqual(top.map(label), ['src', 'a.ts', 'fresh.ts', 'gone.ts', 'new.ts']);
         assert.deepStrictEqual(tree.getChildren(top[0]).map(label), ['added.ts']);
         const renamed = tree.getTreeItem(top[4]);
-        assert.strictEqual(renamed.description, 'R ← old.ts');
+        assert.strictEqual(renamed.description, '← old.ts');
+        // The status letter and colour, as in the Explorer, from the view's own URI scheme, never on the file itself
+        const decorations = new BaseCompareDecorations(compare);
+        const look = (node: TreeNode) => {
+          const decoration = decorations.provideFileDecoration(tree.getTreeItem(node).resourceUri!);
+          return decoration && `${decoration.badge} ${(decoration.color as vscode.ThemeColor).id}`;
+        };
+        assert.deepStrictEqual(top.slice(1).map(look), ['M gitDecoration.modifiedResourceForeground',
+          'U gitDecoration.untrackedResourceForeground', 'D gitDecoration.deletedResourceForeground',
+          'R gitDecoration.renamedResourceForeground']);
+        assert.strictEqual(look(tree.getChildren(top[0])[0]), 'A gitDecoration.addedResourceForeground');
+        assert.strictEqual(tree.getTreeItem(top[1]).description, undefined, 'no letter beside the name');
+        assert.strictEqual(decorations.provideFileDecoration(vscode.Uri.joinPath(shop, 'a.ts')), undefined, 'nothing in the Explorer');
+        decorations.dispose();
         // A click opens the file; a deleted file, which has none, its diff
         assert.strictEqual(renamed.command?.command, 'vscode.open');
         assert.strictEqual((renamed.command!.arguments![0] as vscode.Uri).fsPath, path.join(shop.fsPath, 'new.ts'));
@@ -92,6 +105,26 @@ suite('Compare with Branch', () => {
         assert.strictEqual(input.modified.fsPath, path.join(shop.fsPath, 'new.ts'));
         await vscode.commands.executeCommand('workbench.action.closeActiveEditor');
 
+        // Follow the Editor (on by default): the view selects the active editor's file, until the eye button turns it off
+        const view = api.branchChangesView;
+        const selected = () => {
+          const node = view.selection[0];
+          return node?.kind === 'file' ? node.change.path : undefined;
+        };
+        await vscode.commands.executeCommand('incontext.changes.focus');
+        await vscode.window.showTextDocument(vscode.Uri.joinPath(shop, 'a.ts'));
+        await waitFor('a.ts to be selected', () => selected() === 'a.ts');
+        assert.strictEqual(vscode.window.activeTextEditor?.document.uri.fsPath, path.join(shop.fsPath, 'a.ts'), 'the editor keeps the focus');
+        await vscode.window.showTextDocument(vscode.Uri.joinPath(shop, 'src/added.ts'));
+        await waitFor('src/added.ts, in a folder, to be selected', () => selected() === 'src/added.ts');
+        await vscode.commands.executeCommand('incontext.compare.stopFollowingEditor');
+        await vscode.window.showTextDocument(vscode.Uri.joinPath(shop, 'new.ts'));
+        await sleep(500);
+        assert.strictEqual(selected(), 'src/added.ts', 'not following, the selection stays');
+        await vscode.commands.executeCommand('incontext.compare.followEditor');
+        await waitFor('new.ts to be selected once following again', () => selected() === 'new.ts');
+        await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+
         // The tip of main: main-only.ts, which this branch doesn't have, shows as deleted
         await compare.setMode('tip');
         result = await waitFor('the tip comparison', () => compare.of(shop)?.mode === 'tip' && compare.of(shop));
@@ -102,6 +135,7 @@ suite('Compare with Branch', () => {
         await compare.setBase(tools, 'main');
         await waitFor('both comparisons', () => compare.of(tools) && compare.of(shop)?.mode === 'merge-base');
         assert.deepStrictEqual(summary(compare.of(tools)!), ['M t.ts']);
+        tree.refresh(); // the view's tree is refreshed on each change; this one is the test's own
         assert.deepStrictEqual(tree.getChildren().map(node => node.kind === 'repo' && path.basename(node.result.root.fsPath)), ['shop', 'tools']);
 
         // A ref that doesn't exist says so

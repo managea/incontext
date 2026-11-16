@@ -112,9 +112,7 @@ export class NotesComments implements vscode.Disposable, vscode.CodeLensProvider
       overviewRulerLane: vscode.OverviewRulerLane.Right,
     });
     this.controller.options = { prompt: 'Add a note', placeHolder: "A note in Markdown. Paste references copied with Cmd+'" };
-    this.controller.commentingRangeProvider = {
-      provideCommentingRanges: document => Notes.canHaveNotes(document.uri) ? [new vscode.Range(0, 0, Math.max(document.lineCount - 1, 0), 0)] : [],
-    };
+    this.setGutterButton();
     this.disposables.push(
       this.controller,
       this.lensesChanged,
@@ -122,6 +120,9 @@ export class NotesComments implements vscode.Disposable, vscode.CodeLensProvider
       vscode.window.onDidChangeVisibleTextEditors(() => this.decorate()),
       NotesBacklinks.wentToNote.event(({ uri, line }) => this.openBox(uri, line)),
       vscode.workspace.onDidChangeConfiguration(event => {
+        if (event.affectsConfiguration('incontext.notes.gutterAddButton')) {
+          this.setGutterButton();
+        }
         // Every box starts again as the setting now says, forgetting which you opened or closed
         if (event.affectsConfiguration('incontext.notes.startClosed')) {
           this.toggled.clear();
@@ -206,6 +207,18 @@ export class NotesComments implements vscode.Disposable, vscode.CodeLensProvider
   }
 
   /** The box on the cursor's line, opened for editing, or a new note's box for the line or the selected lines. */
+  /**
+   * The + beside each line that adds a note, off unless `incontext.notes.gutterAddButton` is on. VS Code shows it on
+   * the lines a comment controller says can take a comment, and also draws a grey bar down the gutter beside all of
+   * them, which for notes is every line of every file. Add Note (Cmd+Alt+N, the editor's context menu) needs neither.
+   */
+  private setGutterButton(): void {
+    const on = vscode.workspace.getConfiguration('incontext.notes').get<boolean>('gutterAddButton', false);
+    this.controller.commentingRangeProvider = {
+      provideCommentingRanges: document => on && Notes.canHaveNotes(document.uri) ? [new vscode.Range(0, 0, Math.max(document.lineCount - 1, 0), 0)] : [],
+    };
+  }
+
   private async addNote(): Promise<void> {
     const editor = vscode.window.activeTextEditor;
     if (!editor || !Notes.canHaveNotes(editor.document.uri)) {

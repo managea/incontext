@@ -2,6 +2,10 @@
 #
 # To release: bump "version" in package.json, add a changelog entry, commit, then push a matching tag:
 #   git tag v1.2.0 && git push origin main v1.2.0
+# A tag ending in -pre publishes a pre-release instead, which only installs that switched to pre-release get:
+#   git tag v2.1.0-pre && git push origin main v2.1.0-pre
+# Pre-releases use odd minor versions (2.1.x) and releases even ones (2.0.x, 2.2.x), as the Marketplace recommends,
+# so a pre-release never takes a version a release needs. See RELEASING.md.
 #
 # No Marketplace token is stored anywhere. The job signs in to Azure as the managed identity
 # incontext-publisher (resource group incontext-publishing) through a federated credential that trusts
@@ -46,11 +50,24 @@ jobs:
       - run: npm ci
 
       - name: Check the tag matches package.json
+        id: kind
         if: github.ref_type == 'tag'
         run: |
           version="v$(node -p "require('./package.json').version")"
-          if [ "$version" != "$GITHUB_REF_NAME" ]; then
-            echo "::error::Tag $GITHUB_REF_NAME does not match package.json version $version"
+          minor="$(node -p "require('./package.json').version.split('.')[1]")"
+          if [ "$GITHUB_REF_NAME" = "$version-pre" ]; then
+            if [ $((minor % 2)) -ne 1 ]; then
+              echo "::error::Pre-release $version needs an odd minor version (such as 2.1.x); even ones are for releases"
+              exit 1
+            fi
+            echo "flag=--pre-release" >> "$GITHUB_OUTPUT"
+          elif [ "$GITHUB_REF_NAME" = "$version" ]; then
+            if [ $((minor % 2)) -ne 0 ]; then
+              echo "::error::Release $version needs an even minor version (such as 2.2.0); odd ones are for pre-releases"
+              exit 1
+            fi
+          else
+            echo "::error::Tag $GITHUB_REF_NAME does not match package.json version $version (or $version-pre for a pre-release)"
             exit 1
           fi
 
@@ -67,21 +84,23 @@ jobs:
 
       - name: Package
         if: ${{ !inputs.lookup-identity }}
-        run: npx --yes @vscode/vsce@4.0.0 package --out incontext.vsix
+        run: npx --yes @vscode/vsce@4.0.0 package ${{ steps.kind.outputs.flag }} --out incontext.vsix
 
       - name: Publish to the Visual Studio Marketplace
         if: ${{ !inputs.lookup-identity }}
-        run: npx --yes @vscode/vsce@4.0.0 publish --azure-credential --skip-duplicate --packagePath incontext.vsix
+        run: npx --yes @vscode/vsce@4.0.0 publish ${{ steps.kind.outputs.flag }} --azure-credential --skip-duplicate --packagePath incontext.vsix
 
-      # Runs while the marketplace environment variable OPEN_VSX_ENABLED is true (on since 1.6.0)
+      # Runs while the marketplace environment variable OPEN_VSX_ENABLED is true (on since 1.6.0). A pre-release
+      # package says so in its manifest, which Open VSX reads
       - name: Publish to Open VSX
         if: ${{ !inputs.lookup-identity && vars.OPEN_VSX_ENABLED == 'true' }}
         run: npx --yes ovsx@1.3.0 publish --skip-duplicate --packagePath incontext.vsix
         env:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
 
+  # Releases only: BRAT and manual installs take the latest GitHub release, so pre-releases don't get one
   obsidian:
-    if: ${{ github.ref_type == 'tag' && !inputs.lookup-identity }}
+    if: ${{ github.ref_type == 'tag' && !endsWith(github.ref_name, '-pre') && !inputs.lookup-identity }}
     needs: publish # which checks the tag against package.json, the version the plugin's manifest gets
     runs-on: ubuntu-latest
     permissions:

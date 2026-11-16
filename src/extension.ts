@@ -567,10 +567,11 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(vscode.window.registerTerminalLinkProvider(terminalLinks));
 
   // Picked up by the built-in Markdown preview through the markdown.markdownItPlugins contribution;
-  // callerTree and compareWithBranch are for the tests
+  // callerTree, compareWithBranch and branchChangesView are for the tests
   return {
     callerTree,
     compareWithBranch: compareWithBranch.compare,
+    branchChangesView: compareWithBranch.view,
     extendMarkdownIt(md: Parameters<typeof MarkdownPreview.extendMarkdownIt>[0]) {
       return MarkdownPreview.extendMarkdownIt(md, context.extension.id);
     }

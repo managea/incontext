@@ -2,7 +2,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { BaseCompare, BaseContent } from './BaseCompare';
 import { BaseCompareGutter, GitGutterSwap } from './BaseCompareGutter';
-import { BaseCompareTree, FileNode } from './BaseCompareTree';
+import { BaseCompareDecorations, BaseCompareTree, FileNode, TreeNode } from './BaseCompareTree';
 
 // Compare with a branch: the commands, the status bar item and the Changes view, wired to BaseCompare.
 
@@ -11,13 +11,41 @@ interface RepoPick extends vscode.QuickPickItem { roots: vscode.Uri[] }
 
 export class BaseCompareView {
   /** Sets up comparing; returns what to dispose, and the comparisons for the tests. */
-  static register(context: vscode.ExtensionContext): { disposables: vscode.Disposable[]; compare: BaseCompare } {
+  static readonly FOLLOW_KEY = 'incontext.compare.followEditor';
+
+  static register(context: vscode.ExtensionContext): { disposables: vscode.Disposable[]; compare: BaseCompare; view: vscode.TreeView<TreeNode> } {
     const compare = new BaseCompare(context.workspaceState);
     const tree = new BaseCompareTree(compare);
+    const decorations = new BaseCompareDecorations(compare);
     const view = vscode.window.createTreeView(BaseCompareTree.VIEW, { treeDataProvider: tree, showCollapseAll: true });
     const status = vscode.window.createStatusBarItem('incontext.compare', vscode.StatusBarAlignment.Left, 0);
     status.name = 'InContext: Compare with Branch';
     status.command = 'incontext.compare.chooseBase';
+
+    // Follow the Editor, on unless turned off with the view's eye button: the active editor's file, when it is in the
+    // list, is revealed and selected, as the Explorer does. The selection moves; the keyboard stays in the editor.
+    let following = context.globalState.get<boolean>(BaseCompareView.FOLLOW_KEY, true);
+    let revealed: string | undefined;
+    const reveal = (force = true) => {
+      const file = vscode.window.activeTextEditor?.document.uri;
+      if (!following || !view.visible || !file) {
+        return;
+      }
+      const node = tree.fileNode(file);
+      // After a refresh, only a file that has just become a change: the user may be looking elsewhere in the list
+      if (!node || (!force && revealed === file.fsPath)) {
+        return;
+      }
+      revealed = file.fsPath;
+      Promise.resolve(view.reveal(node, { select: true, focus: false })).catch(() => undefined);
+    };
+    const follow = async (on: boolean) => {
+      following = on;
+      await context.globalState.update(BaseCompareView.FOLLOW_KEY, on);
+      await vscode.commands.executeCommand('setContext', 'incontext.compare.followEditor', on);
+      reveal();
+    };
+    void vscode.commands.executeCommand('setContext', 'incontext.compare.followEditor', following);
 
     const update = () => {
       const results = compare.all();
@@ -31,18 +59,27 @@ export class BaseCompareView {
       view.message = errors.length && results.length === 1 ? errors[0].error
         : compare.active && !files && !errors.length ? `No changes since ${refs.join(', ')}.` : undefined;
       tree.refresh();
+      reveal(false);
       BaseCompareView.updateStatus(compare, status);
     };
     const disposables: vscode.Disposable[] = [
       compare,
       new BaseCompareGutter(compare),
       new GitGutterSwap(compare, context.globalState),
+      vscode.window.registerFileDecorationProvider(decorations),
+      decorations,
       tree,
       view,
       status,
       vscode.workspace.registerTextDocumentContentProvider(BaseContent.SCHEME, new BaseContent(() => compare.git)),
       compare.onDidChange(update),
-      vscode.window.onDidChangeActiveTextEditor(() => BaseCompareView.updateStatus(compare, status)),
+      vscode.window.onDidChangeActiveTextEditor(() => {
+        BaseCompareView.updateStatus(compare, status);
+        reveal();
+      }),
+      view.onDidChangeVisibility(event => event.visible && reveal()),
+      vscode.commands.registerCommand('incontext.compare.followEditor', () => follow(true)),
+      vscode.commands.registerCommand('incontext.compare.stopFollowingEditor', () => follow(false)),
       vscode.commands.registerCommand('incontext.compare.chooseBase', (root?: vscode.Uri) => BaseCompareView.chooseBase(compare, root)),
       vscode.commands.registerCommand('incontext.compare.stop', () => Promise.all(compare.repositories().map(root => compare.setBase(root, undefined)))),
       vscode.commands.registerCommand('incontext.compare.useTip', () => compare.setMode('tip')),
@@ -58,7 +95,7 @@ export class BaseCompareView {
       }),
     ];
     update();
-    return { disposables, compare };
+    return { disposables, compare, view };
   }
 
   /** The status bar: the active file's repository's base, or a plain icon to start comparing. */

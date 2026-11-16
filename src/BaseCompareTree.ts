@@ -5,9 +5,10 @@ import { BaseCompareGutter } from './BaseCompareGutter';
 
 // The Changes view in the InContext sidebar: every file that differs from the compared branch, as a tree of
 // repositories (when more than one is compared) and folders. A click opens the file, its diff icon VS Code's
-// side-by-side diff.
+// side-by-side diff. The view keeps its rows between refreshes and knows each row's parent, so it can reveal the
+// active editor's file (BaseCompareView's Follow the Editor).
 
-export interface RepoNode { kind: 'repo'; result: RepoCompare }
+export interface RepoNode { kind: 'repo'; result: RepoCompare; children: TreeNode[] }
 export interface FolderNode { kind: 'folder'; result: RepoCompare; path: string; label: string; children: TreeNode[] }
 export interface FileNode { kind: 'file'; result: RepoCompare; change: BaseChange }
 export type TreeNode = RepoNode | FolderNode | FileNode;
@@ -17,21 +18,59 @@ export class BaseCompareTree implements vscode.TreeDataProvider<TreeNode> {
   private readonly changed = new vscode.EventEmitter<void>();
   readonly onDidChangeTreeData = this.changed.event;
 
+  /** The rows as last built, each one's parent, and the file rows by path; built again after a refresh. */
+  private roots: TreeNode[] | undefined;
+  private readonly parents = new Map<TreeNode, TreeNode>();
+  private readonly files = new Map<string, FileNode>();
+
   constructor(private readonly compare: BaseCompare) {}
 
   refresh(): void {
+    this.roots = undefined;
     this.changed.fire();
   }
 
   getChildren(node?: TreeNode): TreeNode[] {
     if (!node) {
-      const results = this.compare.all();
-      return results.length === 1 ? BaseCompareTree.folders(results[0]) : results.map(result => ({ kind: 'repo', result }));
+      return this.build();
     }
-    if (node.kind === 'repo') {
-      return BaseCompareTree.folders(node.result);
+    return node.kind === 'file' ? [] : node.children;
+  }
+
+  getParent(node: TreeNode): TreeNode | undefined {
+    return this.parents.get(node);
+  }
+
+  /** The row of a changed file, for revealing it. */
+  fileNode(file: vscode.Uri): FileNode | undefined {
+    this.build();
+    return this.files.get(file.fsPath);
+  }
+
+  private build(): TreeNode[] {
+    if (this.roots) {
+      return this.roots;
     }
-    return node.kind === 'folder' ? node.children : [];
+    this.parents.clear();
+    this.files.clear();
+    const results = this.compare.all();
+    const roots: TreeNode[] = results.length === 1 ? BaseCompareTree.folders(results[0])
+      : results.map(result => ({ kind: 'repo', result, children: BaseCompareTree.folders(result) }));
+    const walk = (nodes: TreeNode[], parent?: TreeNode) => {
+      for (const node of nodes) {
+        if (parent) {
+          this.parents.set(node, parent);
+        }
+        if (node.kind === 'file') {
+          this.files.set(vscode.Uri.joinPath(node.result.root, node.change.path).fsPath, node);
+        } else {
+          walk(node.children, node);
+        }
+      }
+    };
+    walk(roots);
+    this.roots = roots;
+    return roots;
   }
 
   /** A repository's changed files under their folders, a chain of folders with nothing else in them on one row. */
@@ -86,7 +125,7 @@ export class BaseCompareTree implements vscode.TreeDataProvider<TreeNode> {
     if (node.kind === 'folder') {
       const item = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.Expanded);
       item.id = `folder:${node.result.root.fsPath}:${node.path}`;
-      item.resourceUri = vscode.Uri.joinPath(node.result.root, node.path);
+      item.resourceUri = BaseCompareDecorations.uri(vscode.Uri.joinPath(node.result.root, node.path));
       item.iconPath = vscode.ThemeIcon.Folder;
       return item;
     }
@@ -94,9 +133,10 @@ export class BaseCompareTree implements vscode.TreeDataProvider<TreeNode> {
     const file = vscode.Uri.joinPath(result.root, change.path);
     const item = new vscode.TreeItem(path.posix.basename(change.path), vscode.TreeItemCollapsibleState.None);
     item.id = `file:${result.root.fsPath}:${change.path}`;
-    item.resourceUri = file;
+    // The letter at the right and the name's colour come from BaseCompareDecorations, as the Explorer's come from git
+    item.resourceUri = BaseCompareDecorations.uri(file);
     item.iconPath = vscode.ThemeIcon.File;
-    item.description = change.status === 'R' ? `R ← ${change.oldPath}` : change.untracked ? 'U' : change.status;
+    item.description = change.status === 'R' ? `← ${change.oldPath}` : undefined;
     item.tooltip = `${change.path}\n${BaseCompareGutter.describe(change)} since ${result.ref}`;
     // The file itself, which has the changes in its gutter; VS Code's own open command, so Cmd+click opens it to the
     // side. A deleted file has only its diff. The row's diff icon opens the diff (incontext.compare.openDiff)
@@ -107,6 +147,62 @@ export class BaseCompareTree implements vscode.TreeDataProvider<TreeNode> {
   }
 
   dispose(): void {
+    this.changed.dispose();
+  }
+}
+
+/**
+ * The Explorer's look for the Branch Changes rows: the status letter at the right edge and the name in git's colours
+ * (added, modified, deleted, renamed, untracked), and a dot on the folders above a change. The rows' resourceUri is the
+ * file's path under the `incontext-change` scheme, so these decorations show in this view only, never in the Explorer,
+ * where git's own (changes since the last commit) stay; the path still gives each row its file icon.
+ */
+export class BaseCompareDecorations implements vscode.FileDecorationProvider, vscode.Disposable {
+  static readonly SCHEME = 'incontext-change';
+  private readonly changed = new vscode.EventEmitter<vscode.Uri[] | undefined>();
+  readonly onDidChangeFileDecorations = this.changed.event;
+  private readonly subscription: vscode.Disposable;
+
+  constructor(private readonly compare: BaseCompare) {
+    this.subscription = compare.onDidChange(() => this.changed.fire(undefined));
+  }
+
+  static uri(file: vscode.Uri): vscode.Uri {
+    return file.with({ scheme: BaseCompareDecorations.SCHEME });
+  }
+
+  static readonly LOOKS: Record<string, { badge: string; color: string; tooltip: string }> = {
+    A: { badge: 'A', color: 'gitDecoration.addedResourceForeground', tooltip: 'Added' },
+    U: { badge: 'U', color: 'gitDecoration.untrackedResourceForeground', tooltip: 'Added (untracked)' },
+    M: { badge: 'M', color: 'gitDecoration.modifiedResourceForeground', tooltip: 'Modified' },
+    D: { badge: 'D', color: 'gitDecoration.deletedResourceForeground', tooltip: 'Deleted' },
+    R: { badge: 'R', color: 'gitDecoration.renamedResourceForeground', tooltip: 'Renamed' },
+  };
+
+  provideFileDecoration(uri: vscode.Uri): vscode.FileDecoration | undefined {
+    if (uri.scheme !== BaseCompareDecorations.SCHEME) {
+      return undefined;
+    }
+    const file = uri.with({ scheme: 'file' });
+    const root = this.compare.repositoryOf(file);
+    const result = root && this.compare.of(root);
+    if (!root || !result) {
+      return undefined;
+    }
+    const relative = path.relative(root.fsPath, file.fsPath).split(path.sep).join('/');
+    const change = result.changes.find(item => item.path === relative);
+    if (!change) {
+      return undefined;
+    }
+    const look = BaseCompareDecorations.LOOKS[change.untracked ? 'U' : change.status];
+    // Propagated, as git's are, so each folder above a change shows a dot in the change's colour
+    const decoration = new vscode.FileDecoration(look.badge, `${look.tooltip} since ${result.ref}`, new vscode.ThemeColor(look.color));
+    decoration.propagate = true;
+    return decoration;
+  }
+
+  dispose(): void {
+    this.subscription.dispose();
     this.changed.dispose();
   }
 }
