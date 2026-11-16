@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.1.1 (pre-release)
+
+- A note no longer shows two or three times at its lines. It could when its file's boxes were drawn again twice at once, such as just after saving a note
+
 ## 2.1.0 (pre-release)
 
 - Pre-releases: versions with an odd minor (2.1.x) go to the Marketplace and Open VSX as pre-releases, which only installs that choose **Switch to Pre-Release Version** get
