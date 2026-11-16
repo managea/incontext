@@ -399,7 +399,7 @@ suite('Extension', () => {
       assert.ok(preview.includes(`[Lines 2–3](command:incontext.notes.selectAt?${target}) · [Move to selection](command:incontext.notes.moveAt?${target}) · [Add note](command:incontext.notes.editAt?${target})`), preview);
       assert.ok(!preview.includes('incontext.notes.deleteAt'), 'nothing to delete: back-links are not stored');
       // By default only the link, with the note on hover
-      const back = /\[← Note on a\.ts:L5\]\(command:(incontext\.notes\.goToNote)\?([^ )]+) "Defined in @beta\/b\.ts:L2:3, invoked from @beta\/b\.ts:L10\. · Second line\."\)/.exec(preview);
+      const back = /\[← a\.ts:L5\]\(command:(incontext\.notes\.goToNote)\?([^ )]+) "Defined in @beta\/b\.ts:L2:3, invoked from @beta\/b\.ts:L10\. · Second line\."\)/.exec(preview);
       assert.ok(back, preview);
       assert.ok(!preview.includes('> Defined in'), 'the note is not quoted');
       const settings = vscode.workspace.getConfiguration('incontext.notes');
@@ -411,6 +411,22 @@ suite('Extension', () => {
         await settings.update('showBackLinkNotes', undefined, vscode.ConfigurationTarget.Global);
       }
       await vscode.commands.executeCommand(back[1], ...JSON.parse(decodeURIComponent(back[2])));
+      await waitFor('a.ts to open at the note', () => activeFile() === aTs().fsPath);
+      assert.deepStrictEqual(selectedLines(), [5, 5]);
+    });
+
+    test('above lines with back-links but no note, whose box starts closed, a link goes back to each note', async () => {
+      const bTs = vscode.Uri.file(path.join(folder('beta'), 'b.ts'));
+      await vscode.window.showTextDocument(bTs);
+      let lenses: vscode.CodeLens[] = [];
+      await waitFor('the back-link lenses', async () => {
+        lenses = (await vscode.commands.executeCommand<vscode.CodeLens[]>('vscode.executeCodeLensProvider', bTs))
+          .filter(lens => lens.command?.command === NotesBacklinks.GO_TO_NOTE);
+        return lenses.length === 2;
+      });
+      assert.deepStrictEqual(lenses.map(lens => [lens.range.start.line, lens.command!.title]).sort(), [[1, '← a.ts:L5'], [9, '← a.ts:L5']]);
+      assert.strictEqual(lenses[0].command!.tooltip, 'Defined in @beta/b.ts:L2:3, invoked from @beta/b.ts:L10. · Second line.');
+      await vscode.commands.executeCommand(lenses[0].command!.command, ...lenses[0].command!.arguments!);
       await waitFor('a.ts to open at the note', () => activeFile() === aTs().fsPath);
       assert.deepStrictEqual(selectedLines(), [5, 5]);
     });
@@ -533,8 +549,12 @@ suite('Extension', () => {
         const last = await tree.getChildren(steps[0]);
         assert.deepStrictEqual(last.map(node => tree.getTreeItem(node).description), ['a.ts:L7']);
         assert.deepStrictEqual((last[0] as NoteNode).branch.length, 3);
-        assert.strictEqual(tree.getTreeItem(roots[0]).command?.command, 'incontext.notes.goToNote');
-        assert.strictEqual(tree.getTreeItem(roots[0]).command?.arguments?.[4], false, 'the view opens notes where you are');
+        // Rows open with VS Code's own open command, the only one told the keys held: Cmd+click opens them to the side
+        const note = tree.getTreeItem(roots[0]).command;
+        assert.strictEqual(note?.command, 'vscode.open');
+        assert.deepStrictEqual([note?.arguments?.[0].toString(), note?.arguments?.[1].selection.start.line], [aTs().toString(), 4], 'the note\'s lines');
+        const reference = tree.getTreeItem(steps[1]).command;
+        assert.deepStrictEqual([reference?.command, reference?.arguments?.[1].selection.start.line], ['vscode.open', 9]);
       } finally {
         fs.rmSync(bNotes, { force: true });
       }

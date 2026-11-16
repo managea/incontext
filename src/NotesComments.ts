@@ -9,8 +9,8 @@ import { ReferenceUtils } from './ReferenceUtils';
  * note of its own (Add note), so notes can chain: a note there points on, and that place shows a back-link again.
  */
 export class NoteComment implements vscode.Comment {
-  // The thread's title says InContext, so the comment itself has no name
-  readonly author = { name: '' };
+  // Named and pictured in the comment's own header, beside the note, as CodeTour does: the thread's title is blank
+  readonly author = { name: 'InContext', iconPath: NotesComments.icon };
   readonly contextValue = 'incontext.note';
   mode = vscode.CommentMode.Preview;
   body: string | vscode.MarkdownString;
@@ -39,12 +39,14 @@ export class NoteComment implements vscode.Comment {
       this.backLinks.map(link => {
         // The note on hover, on one line: a link's title can't hold a blank line
         const title = link.text.split('\n').map(line => line.trim()).filter(Boolean).join(' · ').replace(/"/g, '&quot;');
-        const back = `[← Note on ${link.source.path.split('/').pop()}:L${link.line}](${NotesBacklinks.goToNoteLink(link)} "${title}")`;
+        const back = `[← ${link.source.path.split('/').pop()}:L${link.line}](${NotesBacklinks.goToNoteLink(link)} "${title}")`;
         const quote = (link.text || '_Empty note_').split('\n').map(line => `> ${line}`).join('\n');
         return showNotes ? `${back}\n\n${quote}` : back;
       }).join(showNotes ? '\n\n' : '  \n'),
       // This box's own note, under the notes that point here
       this.note ? NotesProvider.linkReferences(this.note.text || '_Empty note_') : '',
+      // A rule above the actions, as CodeTour has above its Previous and Next
+      '---',
       actions.map(([title, command]) => `[${title}](command:${command}?${target})`).join(' · '),
     ];
     const markdown = new vscode.MarkdownString(sections.filter(Boolean).join('\n\n'));
@@ -66,7 +68,7 @@ interface NoteReply {
  * with Edit; Open as Markdown opens the notes file. Every change is written to the notes file, which stays the only
  * place notes are kept; back-links are never stored.
  */
-export class NotesComments implements vscode.Disposable {
+export class NotesComments implements vscode.Disposable, vscode.CodeLensProvider {
   static readonly NOTE = 'incontext.note';
   static readonly BACKLINKS = 'incontext.backlinks';
   static readonly SELECT_AT = 'incontext.notes.selectAt';
@@ -75,11 +77,25 @@ export class NotesComments implements vscode.Disposable {
   static readonly OPEN_AT = 'incontext.notes.openAt';
   static readonly DELETE_AT = 'incontext.notes.deleteAt';
   private static readonly LABEL = 'InContext';
+  /** The extension's logo, beside each box's name and in the gutter at each note's line. */
+  static icon?: vscode.Uri;
+  private readonly gutter: vscode.TextEditorDecorationType;
+  /** Which boxes the logo was last drawn beside, and the timer that checks for boxes opened or closed since. */
+  private decorated = '';
+  private readonly watchOpen: NodeJS.Timeout;
+  private tintTimer: NodeJS.Timeout | undefined;
   private readonly controller = vscode.comments.createCommentController('incontext.notes', NotesComments.LABEL);
   /** The boxes shown in each file, by the file's URI. */
   private readonly threads = new Map<string, vscode.CommentThread[]>();
-  /** Boxes you closed, to keep closed when their file's boxes are next drawn: `<file uri>|<first line>`. */
-  private readonly closed = new Set<string>();
+  /**
+   * Boxes you opened or closed against their default, kept so when their file's boxes are next drawn:
+   * `<file uri>|<first line>` to open (true) or closed (false).
+   */
+  private readonly toggled = new Map<string, boolean>();
+  /** While the boxes are drawn again for a change of `incontext.notes.startClosed`: their open state isn't kept. */
+  private forgetToggles = false;
+  private readonly lensesChanged = new vscode.EventEmitter<void>();
+  readonly onDidChangeCodeLenses = this.lensesChanged.event;
   private readonly pending = new Map<string, NodeJS.Timeout>();
   /** The box being edited and when its edit began, and the new note's box Add Note opened, for Cmd+Enter and Esc. */
   private editing?: NoteComment;
@@ -87,13 +103,33 @@ export class NotesComments implements vscode.Disposable {
   private draft?: vscode.CommentThread;
   private readonly disposables: vscode.Disposable[] = [];
 
-  constructor(private readonly backlinks: NotesBacklinks) {
+  constructor(private readonly backlinks: NotesBacklinks, extensionUri: vscode.Uri) {
+    NotesComments.icon = vscode.Uri.joinPath(extensionUri, 'icon.png');
+    this.gutter = vscode.window.createTextEditorDecorationType({
+      gutterIconPath: NotesComments.icon,
+      gutterIconSize: 'contain',
+      overviewRulerColor: '#3d7ab8',
+      overviewRulerLane: vscode.OverviewRulerLane.Right,
+    });
     this.controller.options = { prompt: 'Add a note', placeHolder: "A note in Markdown. Paste references copied with Cmd+'" };
     this.controller.commentingRangeProvider = {
       provideCommentingRanges: document => Notes.canHaveNotes(document.uri) ? [new vscode.Range(0, 0, Math.max(document.lineCount - 1, 0), 0)] : [],
     };
     this.disposables.push(
       this.controller,
+      this.lensesChanged,
+      this.gutter,
+      vscode.window.onDidChangeVisibleTextEditors(() => this.decorate()),
+      NotesBacklinks.wentToNote.event(({ uri, line }) => this.openBox(uri, line)),
+      vscode.workspace.onDidChangeConfiguration(event => {
+        // Every box starts again as the setting now says, forgetting which you opened or closed
+        if (event.affectsConfiguration('incontext.notes.startClosed')) {
+          this.toggled.clear();
+          this.forgetToggles = true;
+          void this.redrawAll().finally(() => { this.forgetToggles = false; });
+        }
+      }),
+      vscode.languages.registerCodeLensProvider({ scheme: 'file' }, this),
       vscode.workspace.onDidOpenTextDocument(document => this.redraw(document)),
       vscode.workspace.onDidCloseTextDocument(document => this.clear(document.uri)),
       vscode.workspace.onDidChangeTextDocument(event => this.changed(event.document)),
@@ -116,12 +152,57 @@ export class NotesComments implements vscode.Disposable {
       vscode.commands.registerCommand('incontext.notes.openMarkdown', (thread: vscode.CommentThread) => this.openMarkdown(thread)),
     );
     void this.redrawAll();
+    // VS Code says nothing when you open or close a box, but the box's state follows, so look a few times a second
+    this.watchOpen = setInterval(() => this.decorate(false), 300);
   }
 
   dispose(): void {
+    clearInterval(this.watchOpen);
+    clearTimeout(this.tintTimer);
     this.pending.forEach(timer => clearTimeout(timer));
     this.threads.forEach(threads => threads.forEach(thread => thread.dispose()));
     this.disposables.forEach(disposable => disposable.dispose());
+  }
+
+  /**
+   * Above lines whose box has no note of its own, which stays closed, a link back to each note that points at them
+   * (`← handler.ts:L30`), so you can go back without opening the box.
+   */
+  provideCodeLenses(document: vscode.TextDocument): vscode.CodeLens[] {
+    return (this.threads.get(document.uri.toString()) ?? [])
+      .map(thread => thread.comments[0] as NoteComment)
+      .filter(comment => NotesComments.isEmpty(comment.note))
+      .flatMap(comment => comment.backLinks.map(link => new vscode.CodeLens(new vscode.Range(comment.lines.start, comment.lines.start), {
+        title: `← ${link.source.path.split('/').pop()}:L${link.line}`,
+        tooltip: link.text.split('\n').map(line => line.trim()).filter(Boolean).join(' · ') || 'Empty note',
+        command: NotesBacklinks.GO_TO_NOTE,
+        arguments: [link.source.toString(), link.line, link.lines, link.anchor],
+      })));
+  }
+
+  /**
+   * Opens the box of the note whose first line this is, when you go to it from the InContext view or a back-link, so
+   * you don't have to open it yourself. A file not open yet gets the box open when it is drawn.
+   */
+  openBox(uri: vscode.Uri, line: number): void {
+    this.toggled.set(`${uri.toString()}|${line}`, true);
+    const thread = this.threads.get(uri.toString())?.find(box => (box.comments[0] as NoteComment).lines.start.line === line);
+    if (thread) {
+      thread.collapsibleState = vscode.CommentThreadCollapsibleState.Expanded;
+    }
+  }
+
+  /** A box with no note, or an empty one: it has nothing to show but its back-links, so it starts closed. */
+  private static isEmpty(note: Note | undefined): boolean {
+    return !note?.text.trim();
+  }
+
+  /**
+   * Whether a box starts open, unless you opened or closed it: one with a note does when `incontext.notes.startClosed`
+   * is off. Closed, its line shows the InContext logo in the gutter and the note on hover.
+   */
+  private static startsOpen(note: Note | undefined): boolean {
+    return !NotesComments.isEmpty(note) && !vscode.workspace.getConfiguration('incontext.notes').get<boolean>('startClosed', true);
   }
 
   /** The box on the cursor's line, opened for editing, or a new note's box for the line or the selected lines. */
@@ -201,9 +282,14 @@ export class NotesComments implements vscode.Disposable {
 
   /**
    * Where a box sits. VS Code draws a comment box after its thread's last line, so a box above its lines (the
-   * setting's default) belongs to the line before them; on a file's first line it can only go below.
+   * setting's default) belongs to the line before them; on a file's first line it can only go below. A box with no
+   * note, which starts closed, sits on its first line instead, so its icons are on the line its back-link links
+   * (provideCodeLenses) are drawn above.
    */
-  static anchor(lines: vscode.Range): vscode.Range {
+  static anchor(lines: vscode.Range, note?: Note): vscode.Range {
+    if (NotesComments.isEmpty(note)) {
+      return new vscode.Range(lines.start, lines.start);
+    }
     const above = vscode.workspace.getConfiguration('incontext.notes').get<string>('position', 'above') === 'above';
     return above && lines.start.line > 0 ? new vscode.Range(lines.start.line - 1, 0, lines.start.line - 1, 0) : lines;
   }
@@ -257,6 +343,8 @@ export class NotesComments implements vscode.Disposable {
     const current = await Notes.read(file) ?? `# Notes on ${ReferenceUtils.createFileReference(source)}\n`;
     const heading = Notes.heading(lines.start.line + 1, document.lineAt(lines.start.line).text, NotesComments.lastLine(lines) + 1);
     await Notes.write(file, Notes.withNote(current, heading, text));
+    // The note you just wrote stays open, also when boxes start closed
+    this.toggled.set(`${document.uri.toString()}|${lines.start.line}`, true);
     await this.redraw(document);
     return true;
   }
@@ -350,7 +438,7 @@ export class NotesComments implements vscode.Disposable {
       const range = comment.note && Notes.rangeIn(document, comment.note);
       if (range && !comment.lines.isEqual(range)) {
         comment.lines = range;
-        thread.range = NotesComments.anchor(range);
+        thread.range = NotesComments.anchor(range, comment.note);
         // The box's Lines link names its lines
         if (comment.mode === vscode.CommentMode.Preview) {
           comment.body = comment.preview();
@@ -358,6 +446,43 @@ export class NotesComments implements vscode.Disposable {
         }
       }
     }
+    this.lensesChanged.fire();
+    this.decorate();
+  }
+
+  /**
+   * The logo in the gutter beside each closed box, on the line the box hangs from, where VS Code's comment icon is.
+   * An open box shows the logo in its own header, so the gutter's would show it twice.
+   */
+  private decorate(always = true): void {
+    const closed = vscode.window.visibleTextEditors.map(editor => ({
+      editor,
+      lines: (this.threads.get(editor.document.uri.toString()) ?? [])
+        .filter(thread => thread.collapsibleState === vscode.CommentThreadCollapsibleState.Collapsed)
+        .map(thread => NotesComments.anchor((thread.comments[0] as NoteComment).lines, (thread.comments[0] as NoteComment).note).start)
+        .map(start => new vscode.Range(start, start)),
+    }));
+    const signature = JSON.stringify(closed.map(({ editor, lines }) => [editor.document.uri.toString(), editor.viewColumn, lines.map(line => line.start.line)]));
+    // Drawn again whenever boxes or editors change: a file opened again is a new editor without the logo
+    if (always || signature !== this.decorated) {
+      this.decorated = signature;
+      closed.forEach(({ editor, lines }) => editor.setDecorations(this.gutter, lines));
+      this.tintHeaders();
+    }
+  }
+
+  /**
+   * Tints the header of each box on screen, the bar with its icons, in its edge colour. VS Code does that only when a
+   * box's state changes after the box is drawn, so a moment after boxes are drawn, opened or shown, their state is set
+   * again (to the same value: VS Code still redraws the header).
+   */
+  private tintHeaders(): void {
+    clearTimeout(this.tintTimer);
+    this.tintTimer = setTimeout(() => {
+      for (const editor of vscode.window.visibleTextEditors) {
+        this.threads.get(editor.document.uri.toString())?.forEach(thread => { thread.state = vscode.CommentThreadState.Resolved; });
+      }
+    }, 300);
   }
 
   private async redrawAll(): Promise<void> {
@@ -367,8 +492,9 @@ export class NotesComments implements vscode.Disposable {
   }
 
   /**
-   * Draws a file's boxes, open unless you closed them: one per note, with the back-links that point into its lines,
-   * and one per set of lines that only back-links point at. Not while one of the file's boxes is being edited.
+   * Draws a file's boxes: one per note, with the back-links that point into its lines, and one per first line that
+   * only back-links point at. Each starts open or closed as startsOpen says, unless you toggled it. Not while one of the
+   * file's boxes is being edited.
    */
   private async redraw(document: vscode.TextDocument): Promise<void> {
     const key = document.uri.toString();
@@ -387,42 +513,53 @@ export class NotesComments implements vscode.Disposable {
       backLinks.forEach(link => unclaimed.splice(unclaimed.indexOf(link), 1));
       return { range, note, backLinks };
     });
-    const byLines = new Map<string, BackLink[]>();
+    // One box per first line: VS Code would stack a box for each set of lines that starts there
+    const byLine = new Map<number, BackLink[]>();
     for (const link of unclaimed) {
-      const lines = `${link.targetLine}-${link.targetEndLine}`;
-      byLines.set(lines, [...byLines.get(lines) ?? [], link]);
+      byLine.set(link.targetLine, [...byLine.get(link.targetLine) ?? [], link]);
     }
-    for (const backLinks of byLines.values()) {
+    for (const backLinks of byLine.values()) {
       const first = Math.min(backLinks[0].targetLine, document.lineCount - 1);
-      const last = Math.min(backLinks[0].targetEndLine, document.lineCount - 1);
+      const last = Math.min(Math.max(...backLinks.map(link => link.targetEndLine)), document.lineCount - 1);
       boxes.push({ range: new vscode.Range(first, 0, last, document.lineAt(last).text.length), backLinks });
     }
 
     for (const thread of old) {
-      const threadKey = `${key}|${(thread.comments[0] as NoteComment).lines.start.line}`;
-      if (thread.collapsibleState === vscode.CommentThreadCollapsibleState.Collapsed) {
-        this.closed.add(threadKey);
+      const comment = thread.comments[0] as NoteComment;
+      const threadKey = `${key}|${comment.lines.start.line}`;
+      const open = thread.collapsibleState === vscode.CommentThreadCollapsibleState.Expanded;
+      if (this.forgetToggles) {
+        // Drawn again as the setting now says
+      } else if (open !== NotesComments.startsOpen(comment.note)) {
+        this.toggled.set(threadKey, open);
       } else {
-        this.closed.delete(threadKey);
+        this.toggled.delete(threadKey);
       }
       thread.dispose();
     }
     const threads = boxes.map(({ range, note, backLinks }) => {
-      const thread = this.controller.createCommentThread(document.uri, NotesComments.anchor(range), []);
+      const thread = this.controller.createCommentThread(document.uri, NotesComments.anchor(range, note), []);
       thread.comments = [new NoteComment(thread, note, backLinks, range)];
       thread.canReply = false;
       thread.contextValue = note ? NotesComments.NOTE : NotesComments.BACKLINKS;
-      thread.label = NotesComments.LABEL;
-      thread.collapsibleState = this.closed.has(`${key}|${range.start.line}`)
-        ? vscode.CommentThreadCollapsibleState.Collapsed
-        : vscode.CommentThreadCollapsibleState.Expanded;
+      // A blank title, not none: without one VS Code writes its own
+      thread.label = ' ';
+      // A note is not a review comment awaiting an answer: "resolved", VS Code draws its box's edges in the theme's
+      // faint grey (editorCommentsWidget.resolvedBorder) instead of its focus blue
+      thread.state = vscode.CommentThreadState.Resolved;
+      thread.collapsibleState = (this.toggled.get(`${key}|${range.start.line}`) ?? NotesComments.startsOpen(note))
+        ? vscode.CommentThreadCollapsibleState.Expanded
+        : vscode.CommentThreadCollapsibleState.Collapsed;
       return thread;
     });
     this.threads.set(key, threads);
+    this.lensesChanged.fire();
+    this.decorate();
   }
 
   private clear(uri: vscode.Uri): void {
     this.threads.get(uri.toString())?.forEach(thread => thread.dispose());
     this.threads.delete(uri.toString());
+    this.decorate();
   }
 }

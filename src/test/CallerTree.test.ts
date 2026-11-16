@@ -1,6 +1,6 @@
 import * as assert from 'assert';
 import * as vscode from 'vscode';
-import { CallerTreeElement, CallerTreeView, treeLabel } from '../CallerTree';
+import { CallerTreeElement, CallerTreeView, rowPlace, treeLabel } from '../CallerTree';
 
 // Runs in the workspace .vscode-test.mjs sets up; alpha/calls holds main.ts -> index.render -> pricing.quote ->
 // pricing.convert -> rates.readRate
@@ -66,6 +66,19 @@ suite('Caller Tree', () => {
       ['calls/index.render', 'pricing.quote', 'pricing.convert', 'rates.readRate']);
     assert.match(String(view.view.message), /^1 entry points \(MODULE 1\) \| 3 functions/);
     assert.strictEqual(view.view.description, 'follows the cursor');
+    // A row opens with VS Code's own open command, the only one told the keys held: Cmd+click opens it to the side
+    const convert = view.provider.getChildren(top[0])[0];
+    const pricingUri = vscode.Uri.joinPath(folder.uri, 'calls/pricing.ts');
+    assert.strictEqual(convert.item.command?.command, 'vscode.open');
+    assert.deepStrictEqual([rowPlace(convert)?.uri.toString(), rowPlace(convert)?.line], [pricingUri.toString(), 2]);
+    // Open to the Side (Cmd+Enter) opens the row beside and keeps the tree on its function
+    await vscode.commands.executeCommand('incontext.callerTree.openToSide', convert);
+    const beside = vscode.window.visibleTextEditors.find(e => e.viewColumn === vscode.ViewColumn.Two);
+    assert.deepStrictEqual([beside?.document.uri.toString(), beside?.selection.active.line], [pricingUri.toString(), 2]);
+    await sleep(400);
+    await view.pending;
+    assert.strictEqual(view.provider.getChildren()[0].item.label, 'rates.readRate');
+    await vscode.window.tabGroups.close(vscode.window.tabGroups.all.filter(group => group.viewColumn === vscode.ViewColumn.Two));
     // Pinned: a click in another function keeps the tree
     await vscode.commands.executeCommand('incontext.callerTree.pin');
     const pricing = await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(

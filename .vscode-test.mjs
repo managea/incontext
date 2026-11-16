@@ -1,4 +1,5 @@
 import { defineConfig } from '@vscode/test-cli';
+import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as net from 'net';
 import * as os from 'os';
@@ -23,6 +24,39 @@ write('alpha/calls/pricing.ts', "import { readRate } from './rates';\nexport fun
   + "export function quote() {\n  return convert('a');\n}\n");
 write('alpha/calls/index.ts', "import { quote } from './pricing';\nexport function render() {\n  return quote();\n}\n");
 write('alpha/calls/main.ts', "import { render } from './index';\nrender();\n");
+// Two git repositories in beta for the Compare with Branch tests (src/test/BaseCompare.test.ts). shop: branch
+// feature left main, then main moved on (main-only.ts); feature modifies a.ts (committed, then again uncommitted),
+// deletes gone.ts, renames old.ts to new.ts, adds added.ts, and has the untracked fresh.ts. tools: feature changes t.ts.
+const git = (repo, ...args) => execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.com',
+  '-c', 'commit.gpgsign=false', '-c', 'core.hooksPath=/dev/null', ...args], { cwd: path.join(root, repo), stdio: 'pipe' });
+const oldLines = Array.from({ length: 12 }, (_, i) => `export const old${i + 1} = ${i + 1};`).join('\n');
+write('beta/shop/a.ts', `${lines}\n`);
+write('beta/shop/gone.ts', 'export const gone = 1;\n');
+write('beta/shop/old.ts', `${oldLines}\n`);
+git('beta/shop', 'init', '-q', '-b', 'main');
+git('beta/shop', 'add', '-A');
+git('beta/shop', 'commit', '-q', '-m', 'base');
+git('beta/shop', 'checkout', '-q', '-b', 'feature');
+write('beta/shop/a.ts', `${lines.replace('const line3 = 3;', 'const line3 = 33;')}\n`);
+fs.rmSync(path.join(root, 'beta/shop/gone.ts'));
+fs.renameSync(path.join(root, 'beta/shop/old.ts'), path.join(root, 'beta/shop/new.ts'));
+write('beta/shop/src/added.ts', 'export const added = 1;\n');
+git('beta/shop', 'add', '-A');
+git('beta/shop', 'commit', '-q', '-m', 'feature');
+git('beta/shop', 'checkout', '-q', 'main');
+write('beta/shop/main-only.ts', 'export const later = 1;\n');
+git('beta/shop', 'add', '-A');
+git('beta/shop', 'commit', '-q', '-m', 'main moves on');
+git('beta/shop', 'checkout', '-q', 'feature');
+write('beta/shop/a.ts', `${lines.replace('const line3 = 3;', 'const line3 = 33;').replace('const line20 = 20;', 'const line20 = 2020;')}\n`);
+write('beta/shop/fresh.ts', 'export const fresh = 1;\n');
+write('beta/tools/t.ts', 'export const t = 1;\n');
+git('beta/tools', 'init', '-q', '-b', 'main');
+git('beta/tools', 'add', '-A');
+git('beta/tools', 'commit', '-q', '-m', 'base');
+git('beta/tools', 'checkout', '-q', '-b', 'feature');
+write('beta/tools/t.ts', 'export const t = 2;\n');
+git('beta/tools', 'commit', '-q', '-am', 'feature');
 write('outside/secret.txt', 'secret line 1\nsecret line 2\n');
 fs.symlinkSync('src', path.join(root, 'alpha/inner'));
 fs.symlinkSync(path.join(root, 'outside'), path.join(root, 'alpha/escape'));

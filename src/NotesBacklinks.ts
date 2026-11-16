@@ -32,7 +32,7 @@ export interface BackLink {
 
 /**
  * Back-links from notes (Notes): which notes point at which lines, for NotesComments to show in the box at those
- * lines (`← Note on handler.ts:L30`). No workspace search: notes live only in the projects' notes folders, so it reads
+ * lines (`← handler.ts:L30`). No workspace search: notes live only in the projects' notes folders, so it reads
  * the notes of the projects open in this window, keeps them in memory by the file they point at, and reads them again
  * when a notes file changes, then says so (onDidChange).
  */
@@ -219,6 +219,9 @@ export class NotesBacklinks implements vscode.Disposable {
     return files;
   }
 
+  /** A back-link was followed to the note on these lines: the note's file and its first line. */
+  static readonly wentToNote = new vscode.EventEmitter<{ uri: vscode.Uri; line: number }>();
+
   /**
    * Opens the file a note is on with the note's lines selected, which shows the note's box. When another split
    * already shows that file, such as the one a link from the note was followed from, it goes back there instead of
@@ -230,6 +233,13 @@ export class NotesBacklinks implements vscode.Disposable {
   private static async goToNote(source: string, note: { line: number; lines: number; anchor: string }, beside = true): Promise<void> {
     const document = await vscode.workspace.openTextDocument(vscode.Uri.parse(source, true));
     const lines = Notes.rangeIn(document, note);
+    await NotesBacklinks.showNote(document, lines, beside);
+    // Then its box opens, also when boxes start closed (NotesComments.openBox): opened before, it would move the
+    // lines each split shows while the split to go to is picked
+    NotesBacklinks.wentToNote.fire({ uri: document.uri, line: lines.start.line });
+  }
+
+  private static async showNote(document: vscode.TextDocument, lines: vscode.Range, beside: boolean): Promise<void> {
     const active = vscode.window.activeTextEditor?.viewColumn ?? 0;
     const others = vscode.window.visibleTextEditors.filter(editor =>
       editor.document.uri.toString() === document.uri.toString() && editor.viewColumn !== undefined && editor.viewColumn !== active);

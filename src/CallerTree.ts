@@ -370,6 +370,20 @@ export async function targetAt(uri: vscode.Uri, pos: vscode.Position): Promise<C
   return s && { name: s.name, uri, pos: (s.selectionRange || s.range).start };
 }
 
+/**
+ * A row's click: VS Code's own open command, which alone is told the keys held, so Cmd+click (Ctrl+click on Windows
+ * and Linux) opens the place to the side. The view keeps its root through the click (CallerTreeView, on selection).
+ */
+export function openRowCommand(uri: vscode.Uri, line: number): vscode.Command {
+  return { command: 'vscode.open', title: 'Open', arguments: [uri, { selection: new vscode.Range(line, 0, line, 0) }] };
+}
+
+/** Where a row's click opens: its file and line. */
+export function rowPlace(element: CallerTreeElement | undefined): { uri: vscode.Uri; line: number } | undefined {
+  const [uri, options] = (element?.item.command?.arguments ?? []) as [vscode.Uri?, { selection?: vscode.Range }?];
+  return uri && options?.selection ? { uri, line: options.selection.start.line } : undefined;
+}
+
 export type CallerTreeElement =
   | { type: 'node'; n: CallerNode; id: string; item: vscode.TreeItem }
   | { type: 'entries'; entries: CallerNode[]; item: vscode.TreeItem }
@@ -439,7 +453,7 @@ export class CallerTreeProvider implements vscode.TreeDataProvider<CallerTreeEle
     item.tooltip = `${n.name} | ${n.module ? rel(n.uri, dir) : place(n.uri, n.pos.line, dir)}`
       + `${edge && parent ? `\nuses ${parent.name} at line ${edge.lines.join(', ')}${edge.call ? '' : ' (not a direct call)'}` : ''}`;
     item.iconPath = new vscode.ThemeIcon(kind ? ENTRY_ICONS[kind] : edge && !edge.call ? 'references' : 'symbol-function');
-    item.command = { command: 'incontext.callerTree.open', title: 'Open', arguments: [n.uri, line] };
+    item.command = openRowCommand(n.uri, line);
     item.contextValue = 'place';
     return { type: 'node', n, id, item };
   }
@@ -470,7 +484,7 @@ export class CallerTreeProvider implements vscode.TreeDataProvider<CallerTreeEle
         item.tooltip = `${n.module ? 'module code' : `${n.name}, defined at ${place(n.uri, n.pos.line, dir)}`}`
           + `${n.via ? `; uses ${n.via.to.name} here` : ''}. Expand for the chain down to the root.`;
         item.iconPath = new vscode.ThemeIcon(ENTRY_ICONS[entryKind(n)]);
-        item.command = { command: 'incontext.callerTree.open', title: 'Open', arguments: [n.uri, line] };
+        item.command = openRowCommand(n.uri, line);
         item.contextValue = 'place';
         return { type: 'entry', n, item } as CallerTreeElement;
       });
@@ -484,7 +498,7 @@ export class CallerTreeProvider implements vscode.TreeDataProvider<CallerTreeEle
         item.description = place(c.uri, line, dir);
         item.tooltip = `${c.name}, defined at ${place(c.uri, c.pos.line, dir)}${c.via ? `; uses ${c.via.to.name} here` : ' (the root)'}`;
         item.iconPath = new vscode.ThemeIcon(c === t.root ? 'target' : 'arrow-small-down');
-        item.command = { command: 'incontext.callerTree.open', title: 'Open', arguments: [c.uri, line] };
+        item.command = openRowCommand(c.uri, line);
         item.contextValue = 'place';
         rows.push({ type: 'hop', item });
       }
@@ -496,8 +510,8 @@ export class CallerTreeProvider implements vscode.TreeDataProvider<CallerTreeEle
 
 /**
  * The Caller Tree view and its commands. While visible it follows the function at the cursor; a click on a row
- * opens that place but keeps the tree on the function you were exploring ("kept"), until your next cursor move.
- * Pin holds it on one function. The tree is recomputed when the root changes or a file is saved.
+ * opens that place (Cmd+click to the side) but keeps the tree on the function you were exploring ("kept"), until
+ * your next cursor move. Pin holds it on one function. The tree is recomputed when the root changes or a file is saved.
  */
 export class CallerTreeView implements vscode.Disposable {
   readonly provider: CallerTreeProvider;
@@ -521,6 +535,8 @@ export class CallerTreeView implements vscode.Disposable {
     this.disposables.push(
       this.view, this.provider,
       this.view.onDidChangeVisibility(() => this.schedule()),
+      // A row is selected just before its click opens it, so the selection change that opening makes isn't yours
+      this.view.onDidChangeSelection(e => this.clickedRow(rowPlace(e.selection[0]))),
       vscode.window.onDidChangeTextEditorSelection(e => {
         const { uri } = e.textEditor.document;
         const pos = e.selections[0].active;
@@ -537,8 +553,7 @@ export class CallerTreeView implements vscode.Disposable {
         this.stale = true;
         this.schedule();
       }),
-      vscode.commands.registerCommand('incontext.callerTree.open', (uri: vscode.Uri, line: number) => this.openRow(uri, line)),
-      vscode.commands.registerCommand('incontext.callerTree.pinAndOpen', (el?: CallerTreeElement) => this.pinAndOpen(el)),
+      vscode.commands.registerCommand('incontext.callerTree.openToSide', (el?: CallerTreeElement) => this.openToSide(el)),
       vscode.commands.registerCommand('incontext.callerTree.pin', () => this.pin()),
       vscode.commands.registerCommand('incontext.callerTree.unpin', () => this.setPinned(undefined)),
       vscode.commands.registerCommand('incontext.callerTree.refresh', () => {
@@ -643,21 +658,18 @@ export class CallerTreeView implements vscode.Disposable {
   }
 
   // A row opens its place without moving the root: the selection changes it causes are not the user's.
-  private async openRow(uri: vscode.Uri, line: number): Promise<void> {
+  private clickedRow(place: { uri: vscode.Uri; line: number } | undefined): void {
+    if (!place) { return; }
     if (!this.anchor) { this.anchor = this.focus(); }
-    this.clicked = { uri: uri.toString(), line, time: Date.now() };
-    const selection = new vscode.Range(line, 0, line, 0);
-    await vscode.window.showTextDocument(uri, { selection });
+    this.clicked = { uri: place.uri.toString(), line: place.line, time: Date.now() };
   }
 
-  // The pin icon on a row, or Cmd+Enter in the tree: pin the root and open the row beside.
-  private async pinAndOpen(el?: CallerTreeElement): Promise<void> {
-    const element = el ?? this.view.selection[0];
-    const command = element?.item.command;
-    if (!command?.arguments) { return; }
-    const [uri, line] = command.arguments as [vscode.Uri, number];
-    if (!this.pinned) { await this.pin(); }
-    const selection = new vscode.Range(line, 0, line, 0);
-    await vscode.window.showTextDocument(uri, { selection, preserveFocus: true, preview: true, viewColumn: vscode.ViewColumn.Beside });
+  // Cmd+Enter in the tree, or Open to the Side on a row's menu: the row's place beside, the tree keeping focus.
+  private async openToSide(el?: CallerTreeElement): Promise<void> {
+    const place = rowPlace(el ?? this.view.selection[0]);
+    if (!place) { return; }
+    this.clickedRow(place);
+    const selection = new vscode.Range(place.line, 0, place.line, 0);
+    await vscode.window.showTextDocument(place.uri, { selection, preserveFocus: true, preview: true, viewColumn: vscode.ViewColumn.Beside });
   }
 }

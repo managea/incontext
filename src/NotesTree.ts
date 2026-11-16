@@ -1,13 +1,16 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { NotesProvider } from './Notes';
+import { Notes, NotesProvider } from './Notes';
 import { NoteEntry, NotesBacklinks } from './NotesBacklinks';
+import { ReferenceParser } from './ReferenceParser';
 
 /** A note in the tree, with the notes above it on its branch, so a chain that loops back stops there. */
 export interface NoteNode {
   kind: 'note';
   entry: NoteEntry;
   branch: string[];
+  /** The note's lines in its file as the code is now, which the row opens; unknown when the file can't be read. */
+  lines?: vscode.Range;
 }
 
 /** A reference in a note that doesn't land on another note: where the chain ends, or loops back. */
@@ -22,7 +25,8 @@ export type NotesTreeNode = NoteNode | ReferenceNode;
 /**
  * The Notes view: every note of the projects open in this window, as chains. A chain starts at a note no other
  * note points to; under each note are its references, and a reference that lands on another note's lines shows
- * that note, with its own references under it, step by step. A click opens a note at its lines, or a reference.
+ * that note, with its own references under it, step by step. A click opens a note at its lines, or a reference;
+ * Cmd+click (Ctrl+click on Windows and Linux) opens it to the side.
  */
 export class NotesTree implements vscode.TreeDataProvider<NotesTreeNode> {
   static readonly VIEW = 'incontext.notes';
@@ -36,18 +40,32 @@ export class NotesTree implements vscode.TreeDataProvider<NotesTreeNode> {
   }
 
   dispose(): void {
+    clearTimeout(this.codeTimer);
     this.changed.dispose();
+  }
+
+  private codeTimer: NodeJS.Timeout | undefined;
+
+  /** Draws the view again a moment after code with notes changes, so each row opens its note's lines as they are now. */
+  watchCode(): vscode.Disposable {
+    return vscode.workspace.onDidChangeTextDocument(async event => {
+      const file = event.document.uri.toString();
+      if (event.contentChanges.length && (await this.notes()).some(entry => entry.source.toString() === file)) {
+        clearTimeout(this.codeTimer);
+        this.codeTimer = setTimeout(() => this.refresh(), 500);
+      }
+    });
   }
 
   async getChildren(node?: NotesTreeNode): Promise<NotesTreeNode[]> {
     const entries = await this.notes();
     if (!node) {
-      return NotesTree.chainStarts(entries).map(entry => ({ kind: 'note', entry, branch: [NotesTree.key(entry)] }));
+      return NotesTree.withLines(NotesTree.chainStarts(entries).map(entry => ({ kind: 'note', entry, branch: [NotesTree.key(entry)] })));
     }
     if (node.kind === 'reference') {
       return [];
     }
-    return node.entry.note.references.map((reference): NotesTreeNode => {
+    return NotesTree.withLines(node.entry.note.references.map((reference): NotesTreeNode => {
       const next = NotesTree.noteAt(entries, reference, node.entry);
       if (!next) {
         return { kind: 'reference', reference, loopsBack: false };
@@ -56,7 +74,36 @@ export class NotesTree implements vscode.TreeDataProvider<NotesTreeNode> {
       return node.branch.includes(key)
         ? { kind: 'reference', reference, loopsBack: true }
         : { kind: 'note', entry: next, branch: [...node.branch, key] };
-    });
+    }));
+  }
+
+  /** The nodes, each note's with where its lines are now (Notes.rangeIn finds them by their first line's text). */
+  private static async withLines(nodes: NotesTreeNode[]): Promise<NotesTreeNode[]> {
+    const texts = new Map<string, Promise<string | undefined>>();
+    for (const node of nodes) {
+      if (node.kind !== 'note') {
+        continue;
+      }
+      const key = node.entry.source.toString();
+      if (!texts.has(key)) {
+        texts.set(key, Notes.read(node.entry.source));
+      }
+      const text = await texts.get(key);
+      if (text !== undefined) {
+        const lines = text.split(/\r?\n/);
+        const document = { lineCount: lines.length, lineAt: (line: number) => ({ text: lines[line] }) } as unknown as vscode.TextDocument;
+        node.lines = Notes.rangeIn(document, node.entry.note);
+      }
+    }
+    return nodes;
+  }
+
+  /**
+   * VS Code's own open command for a row: the only command a view tells which keys were held, so Cmd+click opens the
+   * place to the side, and a double click keeps its tab.
+   */
+  private static open(file: vscode.Uri, selection?: vscode.Range): vscode.Command {
+    return { title: 'Open', command: 'vscode.open', arguments: selection ? [file, { selection }] : [file] };
   }
 
   getTreeItem(node: NotesTreeNode): vscode.TreeItem {
@@ -65,7 +112,12 @@ export class NotesTree implements vscode.TreeDataProvider<NotesTreeNode> {
       item.description = node.loopsBack ? 'back to a note above' : node.reference.replace(/^@/, '');
       item.tooltip = node.reference;
       item.iconPath = new vscode.ThemeIcon(node.loopsBack ? 'sync' : 'arrow-small-right');
-      item.command = { title: 'Open Reference', command: 'incontext.openReference', arguments: [node.reference] };
+      const target = NotesBacklinks.targetOf(node.reference);
+      const whole = ReferenceParser.parse(node.reference)?.startLine === undefined;
+      item.command = target
+        ? NotesTree.open(target.file, whole ? undefined : new vscode.Range(target.line, 0, target.endLine, Number.MAX_SAFE_INTEGER))
+        // A folder, or a project that isn't open: incontext opens it, and says why when it can't
+        : { title: 'Open Reference', command: 'incontext.openReference', arguments: [node.reference] };
       return item;
     }
     const { source, note } = node.entry;
@@ -74,7 +126,9 @@ export class NotesTree implements vscode.TreeDataProvider<NotesTreeNode> {
     item.description = `${path.basename(source.fsPath)}:L${note.line}`;
     item.tooltip = new vscode.MarkdownString(note.text || '_Empty note_');
     item.iconPath = new vscode.ThemeIcon('note');
-    item.command = { title: 'Go to Note', command: NotesBacklinks.GO_TO_NOTE, arguments: [source.toString(), note.line, note.lines, note.anchor, false] };
+    item.command = node.lines
+      ? NotesTree.open(source, node.lines)
+      : { title: 'Go to Note', command: NotesBacklinks.GO_TO_NOTE, arguments: [source.toString(), note.line, note.lines, note.anchor, false] };
     return item;
   }
 

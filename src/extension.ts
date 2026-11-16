@@ -26,6 +26,7 @@ import { NotesComments } from './NotesComments';
 import { NotesBacklinks } from './NotesBacklinks';
 import { NotesTree } from './NotesTree';
 import { CallerTreeView } from './CallerTree';
+import { BaseCompareView } from './BaseCompareView';
 import { Logger } from './Logger';
 import { LinkServer } from './LinkServer';
 import { LinkService } from './LinkService';
@@ -464,15 +465,28 @@ export function activate(context: vscode.ExtensionContext) {
   const callerTree = new CallerTreeView(context);
   context.subscriptions.push(callerTree);
 
+  // Compare with a branch: the gutter and the Changes view show what differs from it (BaseCompare)
+  const compareWithBranch = BaseCompareView.register(context);
+  context.subscriptions.push(...compareWithBranch.disposables);
+
   // Notes on code, kept outside the code base (Notes): shown under their lines with their back-links (NotesComments)
   const backlinks = new NotesBacklinks();
   const notesTree = new NotesTree(() => backlinks.notes());
   const notesView = vscode.window.createTreeView(NotesTree.VIEW, { treeDataProvider: notesTree, showCollapseAll: true });
+  const notesComments = new NotesComments(backlinks, context.extensionUri);
   context.subscriptions.push(
     backlinks,
-    new NotesComments(backlinks),
+    notesComments,
+    // A note picked in the view opens with its box open; the row's click opens the file (NotesTree)
+    notesView.onDidChangeSelection(event => {
+      const node = event.selection[0];
+      if (node?.kind === 'note' && node.lines) {
+        notesComments.openBox(node.entry.source, node.lines.start.line);
+      }
+    }),
     notesTree,
     notesView,
+    notesTree.watchCode(),
     // Shown again, the view reads the notes again: they can change while it is hidden
     notesView.onDidChangeVisibility(event => event.visible && backlinks.refresh()),
     backlinks.onDidChange(() => notesTree.refresh()),
@@ -553,9 +567,10 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(vscode.window.registerTerminalLinkProvider(terminalLinks));
 
   // Picked up by the built-in Markdown preview through the markdown.markdownItPlugins contribution;
-  // callerTree is for the tests
+  // callerTree and compareWithBranch are for the tests
   return {
     callerTree,
+    compareWithBranch: compareWithBranch.compare,
     extendMarkdownIt(md: Parameters<typeof MarkdownPreview.extendMarkdownIt>[0]) {
       return MarkdownPreview.extendMarkdownIt(md, context.extension.id);
     }

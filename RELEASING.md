@@ -14,7 +14,7 @@ Releases are published by GitHub Actions ([`.github/workflows/publish.yml`](.git
    npm version 1.2.0 --no-git-tag-version
    ```
 
-2. Add an entry for the version under **Changelog** in `README.md`. The README is also the Marketplace page.
+2. Add an entry for the version at the top of `CHANGELOG.md`, which the Marketplace shows on its Changelog tab. The README is the Marketplace page.
 3. Commit, then push the commit and a tag that matches the version:
 
    ```bash

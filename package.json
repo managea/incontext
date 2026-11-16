@@ -1,9 +1,9 @@
 {
   "name": "incontext",
   "displayName": "Code Reference Extension",
-  "description": "Prompt the right way. Structure your AI prompts naturally, with inline, pinpoint-accurate code references — delivering better LLM outputs, preserving your visual context, and enabling logical, easy-to-read prompts.",
+  "description": "Find your way around code that agents write: pinpoint code references and notes on code, shared by you and your AI agents, that open anywhere with a click.",
   "publisher": "managea",
-  "version": "1.8.0",
+  "version": "2.0.0",
   "icon": "icon.png",
   "license": "MIT",
   "repository": {
@@ -72,13 +72,23 @@
         "incontext.notes.showBackLinkNotes": {
           "type": "boolean",
           "default": false,
-          "markdownDescription": "Quote the note in each back-link (`← Note on handler.ts:L30`). Off, a back-link shows only its link, and the note on hover."
+          "markdownDescription": "Quote the note in each back-link (`← handler.ts:L30`). Off, a back-link shows only its link, and the note on hover."
+        },
+        "incontext.notes.startClosed": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Start each note's box closed: its line shows the InContext logo in the gutter and the note on hover, and a click on the logo opens it. A note you have just written stays open. Off, a box with a note starts open."
         },
         "incontext.notes.folder": {
           "type": "string",
           "default": "",
           "scope": "machine-overridable",
           "markdownDescription": "Folder for your notes on code (**InContext: Add Note**). In your user settings, keep it outside your repositories, so notes are never committed: each source file's notes are a Markdown file at `<folder>/<project>/<path in the project>.md`, and a synced folder shares them between machines. To keep a project's notes inside it and commit them, set a relative folder such as `.notes` in the project's own settings (`.vscode/settings.json`): its notes are then at `<project>/.notes/<path in the project>.md`. `~` is your home folder."
+        },
+        "incontext.compare.hideGitGutter": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "While a repository is compared with a branch (**InContext: Compare with Branch**), hide git's own gutter markers, which compare with your last commit, so the gutter shows only the changes since that branch."
         }
       }
     },
@@ -204,13 +214,49 @@
         "icon": "$(collapse-all)"
       },
       {
-        "command": "incontext.callerTree.pinAndOpen",
-        "title": "InContext: Pin and Open to the Side",
-        "icon": "$(pin)"
+        "command": "incontext.callerTree.openToSide",
+        "title": "Open to the Side"
       },
       {
-        "command": "incontext.callerTree.open",
-        "title": "InContext: Open Caller Tree Row"
+        "command": "incontext.compare.chooseBase",
+        "title": "Compare with Branch…",
+        "category": "InContext",
+        "icon": "$(git-compare)"
+      },
+      {
+        "command": "incontext.compare.stop",
+        "title": "Stop Comparing with Branch",
+        "category": "InContext",
+        "icon": "$(close)"
+      },
+      {
+        "command": "incontext.compare.useTip",
+        "title": "Compare with the Branch's Tip",
+        "category": "InContext",
+        "icon": "$(git-merge)"
+      },
+      {
+        "command": "incontext.compare.useMergeBase",
+        "title": "Compare from the Merge-Base",
+        "category": "InContext",
+        "icon": "$(git-commit)"
+      },
+      {
+        "command": "incontext.compare.toggleMode",
+        "title": "Switch Between Merge-Base and Tip",
+        "category": "InContext"
+      },
+      {
+        "command": "incontext.compare.refresh",
+        "title": "Refresh Changes",
+        "category": "InContext",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "incontext.compare.openDiff",
+        "title": "Open Changes",
+        "category": "InContext",
+        "icon": "$(diff)"
       }
     ],
     "keybindings": [
@@ -262,7 +308,7 @@
         "when": "commentEditorFocused && commentController == incontext.notes"
       },
       {
-        "command": "incontext.callerTree.pinAndOpen",
+        "command": "incontext.callerTree.openToSide",
         "key": "ctrl+enter",
         "mac": "cmd+enter",
         "when": "focusedView == incontext.callerTree"
@@ -283,12 +329,15 @@
           "id": "incontext.notes",
           "name": "Notes",
           "icon": "media/incontext-activity.svg"
-        }
-      ],
-      "explorer": [
+        },
         {
           "id": "incontext.callerTree",
-          "name": "InContext: Caller Tree"
+          "name": "Caller Tree"
+        },
+        {
+          "id": "incontext.changes",
+          "name": "Branch Changes",
+          "icon": "$(git-compare)"
         }
       ]
     },
@@ -296,6 +345,11 @@
       {
         "view": "incontext.notes",
         "contents": "No notes yet. Put the cursor on a line, or select lines, and run [InContext: Add Note](command:incontext.addNote). Notes and the places they point to show here as chains."
+      },
+      {
+        "view": "incontext.changes",
+        "contents": "See what your branch changes compared with another one, such as main, in the gutter of every editor and as a tree here: the files a merge request would show, uncommitted edits included.\n[Compare with Branch…](command:incontext.compare.chooseBase)",
+        "when": "!incontext.compare.active"
       }
     ],
     "menus": {
@@ -341,12 +395,24 @@
           "when": "false"
         },
         {
-          "command": "incontext.callerTree.pinAndOpen",
+          "command": "incontext.callerTree.openToSide",
           "when": "false"
         },
         {
-          "command": "incontext.callerTree.open",
+          "command": "incontext.compare.openDiff",
           "when": "false"
+        },
+        {
+          "command": "incontext.compare.useTip",
+          "when": "incontext.compare.active && !incontext.compare.tip"
+        },
+        {
+          "command": "incontext.compare.useMergeBase",
+          "when": "incontext.compare.active && incontext.compare.tip"
+        },
+        {
+          "command": "incontext.compare.stop",
+          "when": "incontext.compare.active"
         }
       ],
       "view/title": [
@@ -379,6 +445,31 @@
           "command": "incontext.callerTree.refresh",
           "when": "view == incontext.callerTree",
           "group": "navigation"
+        },
+        {
+          "command": "incontext.compare.chooseBase",
+          "when": "view == incontext.changes",
+          "group": "navigation@1"
+        },
+        {
+          "command": "incontext.compare.useTip",
+          "when": "view == incontext.changes && incontext.compare.active && !incontext.compare.tip",
+          "group": "navigation@2"
+        },
+        {
+          "command": "incontext.compare.useMergeBase",
+          "when": "view == incontext.changes && incontext.compare.active && incontext.compare.tip",
+          "group": "navigation@2"
+        },
+        {
+          "command": "incontext.compare.refresh",
+          "when": "view == incontext.changes && incontext.compare.active",
+          "group": "navigation@3"
+        },
+        {
+          "command": "incontext.compare.stop",
+          "when": "view == incontext.changes && incontext.compare.active",
+          "group": "navigation@4"
         }
       ],
       "comments/commentThread/context": [
@@ -455,14 +546,14 @@
       ],
       "view/item/context": [
         {
-          "command": "incontext.callerTree.pinAndOpen",
-          "when": "view == incontext.callerTree && viewItem == place",
-          "group": "inline"
-        },
-        {
-          "command": "incontext.callerTree.pinAndOpen",
+          "command": "incontext.callerTree.openToSide",
           "when": "view == incontext.callerTree && viewItem == place",
           "group": "navigation"
+        },
+        {
+          "command": "incontext.compare.openDiff",
+          "when": "view == incontext.changes && viewItem =~ /^(file|deletedFile)$/",
+          "group": "inline"
         }
       ]
     }
