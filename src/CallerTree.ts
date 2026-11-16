@@ -340,20 +340,43 @@ export function treeMessage(t: CallerTreeResult): string {
     + ` | ${(t.ms / 1000).toFixed(1)} s${state}`;
 }
 
-// A row's label: the file's name, then the function (`ReportDetails.renderArchiveGate`), so each row says which
-// file it is in; the full path is in the description. Module code is `ArchiveAccessPanel (module)`, a file whose
-// name says little (index, __init__, Next.js route, page and layout) adds its folder (`feed/route.POST`), and a
-// name that already starts with the file's name (a component in its own file) is not repeated.
-const GENERIC_FILES = new Set(['index', '__init__', 'route', 'page', 'layout']);
+// A row is the function's name, in its file's colour (CallerTreeColors), then its file and line in the description,
+// dimmer and uncoloured (`renderArchiveGate  ReportDetails.tsx:212`); the full path is in the tooltip. A file whose
+// name says little (index, __init__, Next.js route, page and layout, a Lambda's handler) adds its folder
+// (`get-report/handler.ts`).
+const GENERIC_FILES = new Set(['index', '__init__', 'route', 'page', 'layout', 'handler']);
 
-export function treeLabel(n: { name: string; uri: vscode.Uri; module?: boolean }): string {
-  const parts = (n.uri.path || n.uri.fsPath || '').split(/[\\/]/);
-  let file = (parts.pop() || '').replace(/\.[^.]+$/, '');
-  if (GENERIC_FILES.has(file) && parts.length > 1) { file = `${parts.pop()}/${file}`; }
-  if (!file) { return n.name; }
-  if (n.module) { return `${file} (module)`; }
-  if (n.name === file || n.name.startsWith(`${file}.`)) { return n.name; }
-  return `${file}.${n.name}`;
+/** A file as a row names it: its name, with its folder when the name says little. */
+export function fileLabel(uri: vscode.Uri): string {
+  const parts = (uri.path || uri.fsPath || '').split(/[\\/]/);
+  const file = parts.pop() || '';
+  const folder = parts.pop();
+  return GENERIC_FILES.has(file.replace(/\.[^.]+$/, '')) && folder ? `${folder}/${file}` : file;
+}
+
+/**
+ * Each file's colour in the Caller Tree: rows in one file share a colour, in the name and the icon, so you can see
+ * which rows are in the same file wherever they are in the tree. The palette is the extension's own colours
+ * (`incontext.callerTree.file1` to `file8`, which a theme can change), given out in the order the walk met the files,
+ * the root's first; a tree with more files uses them again. Rows carry their file's path under this scheme with the
+ * colour's number, so the colours show in this view only.
+ */
+export class CallerTreeColors implements vscode.FileDecorationProvider {
+  static readonly SCHEME = 'incontext-caller';
+  static readonly COUNT = 8;
+
+  static uri(file: vscode.Uri, colour: number): vscode.Uri {
+    return file.with({ scheme: CallerTreeColors.SCHEME, query: `colour=${colour}` });
+  }
+
+  static color(colour: number): vscode.ThemeColor {
+    return new vscode.ThemeColor(`incontext.callerTree.file${colour % CallerTreeColors.COUNT + 1}`);
+  }
+
+  provideFileDecoration(uri: vscode.Uri): vscode.FileDecoration | undefined {
+    const colour = uri.scheme === CallerTreeColors.SCHEME ? /(?:^|&)colour=(\d+)/.exec(uri.query)?.[1] : undefined;
+    return colour === undefined ? undefined : new vscode.FileDecoration(undefined, undefined, CallerTreeColors.color(Number(colour)));
+  }
 }
 
 /** The function at a place: the innermost member the call hierarchy knows, else the innermost named member. */
@@ -390,11 +413,22 @@ export type CallerTreeElement =
   | { type: 'entry'; n: CallerNode; item: vscode.TreeItem }
   | { type: 'hop'; item: vscode.TreeItem };
 
+/** A caller of a row as the view lists it: the edge it uses the row through, and the folded function it reaches the row through. */
+interface CallerRow {
+  edge: CallerEdge;
+  via?: CallerNode;
+}
+
+const sameFile = (a: CallerNode, b: CallerNode) => a.uri.toString() === b.uri.toString();
+
 /**
  * The tree: the root and its callers (every function expands into its own callers, like the built-in Call
  * Hierarchy), then an "Entry points" group whose rows expand into their chain down to the root. Expanded mode
  * shows the whole tree but expands each function once, at its first place; later places are leaves marked
- * "seen above", so cycles stay finite.
+ * "seen above", so cycles stay finite. With calls within a file folded, a caller in the same file as the row it calls
+ * is left out and its own callers take its place, each saying which function it goes `via`: the tree then shows only
+ * the steps from one file to another. A caller that ends the chain (an entry point, or one not followed further) is
+ * never left out.
  */
 export class CallerTreeProvider implements vscode.TreeDataProvider<CallerTreeElement> {
   static readonly VIEW = 'incontext.callerTree';
@@ -402,17 +436,24 @@ export class CallerTreeProvider implements vscode.TreeDataProvider<CallerTreeEle
   readonly onDidChangeTreeData = this.changed.event;
   tree: CallerTreeResult | undefined;
   private first = new Map<CallerNode, string>();
+  /** Each file's colour (CallerTreeColors), by the file's URI. */
+  private colours = new Map<string, number>();
   private generation = 0; // part of every id, so a mode switch is not overridden by remembered expand states
 
-  constructor(public expanded = true) {}
+  constructor(public expanded = true, public folded = false) {}
 
   set(tree: CallerTreeResult): void {
     this.tree = tree;
     this.first = new Map();
+    // In the order the walk met the files, the root's first
+    this.colours = new Map();
+    for (const n of tree.nodes) {
+      if (!this.colours.has(n.uri.toString())) { this.colours.set(n.uri.toString(), this.colours.size); }
+    }
     const walk = (n: CallerNode, id: string) => {
       if (this.first.has(n)) { return; }
       this.first.set(n, id);
-      for (const e of sortedCallers(n, tree.dir)) { walk(e.from, `${id}>${e.from.key}`); }
+      for (const { edge } of this.callers(n)) { walk(edge.from, `${id}>${edge.from.key}`); }
     };
     walk(tree.root, this.rootId());
     this.changed.fire();
@@ -422,6 +463,17 @@ export class CallerTreeProvider implements vscode.TreeDataProvider<CallerTreeEle
     this.expanded = expanded;
     this.generation += 1;
     if (this.tree) { this.set(this.tree); }
+  }
+
+  setFolded(folded: boolean): void {
+    this.folded = folded;
+    this.generation += 1;
+    if (this.tree) { this.set(this.tree); }
+  }
+
+  /** Draws the rows again, as for a change of `incontext.callerTree.colorByFile`. */
+  refresh(): void {
+    this.changed.fire();
   }
 
   dispose(): void {
@@ -436,23 +488,57 @@ export class CallerTreeProvider implements vscode.TreeDataProvider<CallerTreeEle
     return element.item;
   }
 
-  // A function row. `edge` is how it uses its parent row; clicking opens that use (else the definition).
-  private node(n: CallerNode, edge: CallerEdge | undefined, parent: CallerNode | undefined, id: string): CallerTreeElement {
+  /** A row's callers, in the view's order; with calls within a file folded, those in the row's file give way to their own callers. */
+  callers(n: CallerNode): CallerRow[] {
+    const { dir } = this.tree!;
+    if (!this.folded) { return sortedCallers(n, dir).map(edge => ({ edge })); }
+    const rows: CallerRow[] = [];
+    const met = new Set<CallerNode>([n]);
+    const visit = (m: CallerNode, via?: CallerNode) => {
+      for (const edge of sortedCallers(m, dir)) {
+        const from = edge.from;
+        if (met.has(from)) { continue; }
+        met.add(from);
+        if (sameFile(from, n) && from.callers.length) {
+          visit(from, from);
+        } else {
+          rows.push({ edge, via });
+        }
+      }
+    };
+    visit(n);
+    return rows;
+  }
+
+  /** The row's icon and name in its file's colour, unless `incontext.callerTree.colorByFile` is off. */
+  private paint(item: vscode.TreeItem, uri: vscode.Uri, icon: string): void {
+    const on = vscode.workspace.getConfiguration('incontext.callerTree').get<boolean>('colorByFile', true);
+    const colour = on ? this.colours.get(uri.toString()) : undefined;
+    item.iconPath = new vscode.ThemeIcon(icon, colour === undefined ? undefined : CallerTreeColors.color(colour));
+    if (colour !== undefined) { item.resourceUri = CallerTreeColors.uri(uri, colour); }
+  }
+
+  // A function row. `edge` is how it uses its parent row, or the folded function `via` that leads there; clicking
+  // opens that use (else the definition).
+  private node(n: CallerNode, edge: CallerEdge | undefined, parent: CallerNode | undefined, id: string, via?: CallerNode): CallerTreeElement {
     const { dir, root } = this.tree!;
     const line = edge ? edge.lines[0] - 1 : n.pos.line;
     const S = vscode.TreeItemCollapsibleState;
-    const repeat = this.expanded && n.callers.length > 0 && this.first.get(n) !== id;
+    const callers = n.callers.length ? this.callers(n).length : 0;
+    const repeat = this.expanded && callers > 0 && this.first.get(n) !== id;
     let state = S.None;
-    if (n.callers.length && !repeat) { state = this.expanded || !edge ? S.Expanded : S.Collapsed; }
-    const item = new vscode.TreeItem(treeLabel(n), state);
+    if (callers && !repeat) { state = this.expanded || !edge ? S.Expanded : S.Collapsed; }
+    const item = new vscode.TreeItem(n.name, state);
     item.id = id;
     const kind = n !== root && !n.callers.length && !n.cut ? entryKind(n) : undefined;
-    const extra = [edge && !edge.call ? 'ref' : '', kind || '', n.cut ? 'NOT EXPANDED' : '', repeat ? 'seen above' : '']
-      .filter(Boolean);
-    item.description = `${n.module ? rel(n.uri, dir) : place(n.uri, line, dir)}${extra.length ? ` · ${extra.join(' · ')}` : ''}`;
+    const extra = [edge && !edge.call ? 'ref' : '', kind || '', n.cut ? 'NOT EXPANDED' : '', via ? `via ${via.name}` : '',
+      repeat ? 'seen above' : ''].filter(Boolean);
+    item.description = `${n.module ? fileLabel(n.uri) : `${fileLabel(n.uri)}:${line + 1}`}${extra.length ? ` · ${extra.join(' · ')}` : ''}`;
+    const uses = via ?? parent;
     item.tooltip = `${n.name} | ${n.module ? rel(n.uri, dir) : place(n.uri, n.pos.line, dir)}`
-      + `${edge && parent ? `\nuses ${parent.name} at line ${edge.lines.join(', ')}${edge.call ? '' : ' (not a direct call)'}` : ''}`;
-    item.iconPath = new vscode.ThemeIcon(kind ? ENTRY_ICONS[kind] : edge && !edge.call ? 'references' : 'symbol-function');
+      + `${edge && uses ? `\nuses ${uses.name} at line ${edge.lines.join(', ')}${edge.call ? '' : ' (not a direct call)'}` : ''}`
+      + `${via && parent ? `, which leads to ${parent.name} in the same file` : ''}`;
+    this.paint(item, n.uri, kind ? ENTRY_ICONS[kind] : edge && !edge.call ? 'references' : 'symbol-function');
     item.command = openRowCommand(n.uri, line);
     item.contextValue = 'place';
     return { type: 'node', n, id, item };
@@ -473,17 +559,17 @@ export class CallerTreeProvider implements vscode.TreeDataProvider<CallerTreeEle
       return [this.node(t.root, undefined, undefined, this.rootId()), { type: 'entries', entries, item: group }];
     }
     if (element.type === 'node') {
-      return sortedCallers(element.n, dir).map(e => this.node(e.from, e, element.n, `${element.id}>${e.from.key}`));
+      return this.callers(element.n).map(({ edge, via }) => this.node(edge.from, edge, element.n, `${element.id}>${edge.from.key}`, via));
     }
     if (element.type === 'entries') {
       return element.entries.map(n => {
-        const item = new vscode.TreeItem(treeLabel(n), n.via ? S.Collapsed : S.None);
+        const item = new vscode.TreeItem(n.name, n.via ? S.Collapsed : S.None);
         item.id = `${this.generation}|${t.root.key}|entry|${n.key}`;
         const line = n.via ? n.via.edge.lines[0] - 1 : n.pos.line;
-        item.description = `${place(n.uri, line, dir)} · ${entryKind(n)}`;
-        item.tooltip = `${n.module ? 'module code' : `${n.name}, defined at ${place(n.uri, n.pos.line, dir)}`}`
+        item.description = `${fileLabel(n.uri)}:${line + 1} · ${entryKind(n)}`;
+        item.tooltip = `${n.module ? `module code in ${rel(n.uri, dir)}` : `${n.name}, defined at ${place(n.uri, n.pos.line, dir)}`}`
           + `${n.via ? `; uses ${n.via.to.name} here` : ''}. Expand for the chain down to the root.`;
-        item.iconPath = new vscode.ThemeIcon(ENTRY_ICONS[entryKind(n)]);
+        this.paint(item, n.uri, ENTRY_ICONS[entryKind(n)]);
         item.command = openRowCommand(n.uri, line);
         item.contextValue = 'place';
         return { type: 'entry', n, item } as CallerTreeElement;
@@ -491,16 +577,25 @@ export class CallerTreeProvider implements vscode.TreeDataProvider<CallerTreeEle
     }
     if (element.type === 'entry') {
       const rows: CallerTreeElement[] = [];
+      // With calls within a file folded, a step in the same file as the row above it is left out; the root never is
+      let above = element.n;
+      let folded: CallerNode | undefined;
       for (let c: CallerNode | undefined = element.n.via?.to; c; c = c.via?.to) {
+        if (this.folded && c !== t.root && sameFile(c, above)) {
+          folded = c;
+          continue;
+        }
         const line = c.via ? c.via.edge.lines[0] - 1 : c.pos.line;
-        const item = new vscode.TreeItem(treeLabel(c), S.None);
+        const item = new vscode.TreeItem(c.name, S.None);
         item.id = `${this.generation}|${t.root.key}|entry|${element.n.key}|${c.key}`;
-        item.description = place(c.uri, line, dir);
+        item.description = `${fileLabel(c.uri)}:${line + 1}${folded ? ` · via ${folded.name}` : ''}`;
         item.tooltip = `${c.name}, defined at ${place(c.uri, c.pos.line, dir)}${c.via ? `; uses ${c.via.to.name} here` : ' (the root)'}`;
-        item.iconPath = new vscode.ThemeIcon(c === t.root ? 'target' : 'arrow-small-down');
+        this.paint(item, c.uri, c === t.root ? 'target' : 'arrow-small-down');
         item.command = openRowCommand(c.uri, line);
         item.contextValue = 'place';
         rows.push({ type: 'hop', item });
+        above = c;
+        folded = undefined;
       }
       return rows;
     }
@@ -527,9 +622,11 @@ export class CallerTreeView implements vscode.Disposable {
   pending: Promise<void> = Promise.resolve();
 
   constructor(private readonly context: vscode.ExtensionContext) {
-    this.provider = new CallerTreeProvider(context.globalState.get('incontext.callerTree.expanded', true));
+    this.provider = new CallerTreeProvider(context.globalState.get('incontext.callerTree.expanded', true),
+      context.globalState.get('incontext.callerTree.folded', false));
     this.view = vscode.window.createTreeView(CallerTreeProvider.VIEW, { treeDataProvider: this.provider });
     void vscode.commands.executeCommand('setContext', 'incontext.callerTree.expanded', this.provider.expanded);
+    void vscode.commands.executeCommand('setContext', 'incontext.callerTree.folded', this.provider.folded);
     void vscode.commands.executeCommand('setContext', 'incontext.callerTree.pinned', false);
     const USER = new Set([vscode.TextEditorSelectionChangeKind.Keyboard, vscode.TextEditorSelectionChangeKind.Mouse]);
     this.disposables.push(
@@ -562,6 +659,12 @@ export class CallerTreeView implements vscode.Disposable {
       }),
       vscode.commands.registerCommand('incontext.callerTree.expand', () => this.setExpanded(true)),
       vscode.commands.registerCommand('incontext.callerTree.collapse', () => this.setExpanded(false)),
+      vscode.commands.registerCommand('incontext.callerTree.foldSameFile', () => this.setFolded(true)),
+      vscode.commands.registerCommand('incontext.callerTree.unfoldSameFile', () => this.setFolded(false)),
+      vscode.window.registerFileDecorationProvider(new CallerTreeColors()),
+      vscode.workspace.onDidChangeConfiguration(e => {
+        if (e.affectsConfiguration('incontext.callerTree.colorByFile')) { this.provider.refresh(); }
+      }),
     );
   }
 
@@ -611,7 +714,7 @@ export class CallerTreeView implements vscode.Disposable {
       this.started = true;
       void vscode.commands.executeCommand('setContext', 'incontext.callerTree.started', true);
     }
-    this.view.description = this.pinned ? 'pinned' : this.kept() ? 'kept' : 'follows the cursor';
+    this.describe();
     const key = `${spot(target.uri, target.pos.line)}:${target.pos.character}`;
     if (this.live.key === key && !this.stale && (this.live.state || this.live.run)) {
       return this.show(target);
@@ -656,6 +759,19 @@ export class CallerTreeView implements vscode.Disposable {
       return;
     }
     await this.setPinned(target);
+  }
+
+  /** The view's title line: what the tree follows, and whether calls within a file are folded. */
+  private describe(): void {
+    const follows = this.pinned ? 'pinned' : this.kept() ? 'kept' : 'follows the cursor';
+    this.view.description = this.provider.folded ? `${follows} · same-file calls folded` : follows;
+  }
+
+  private async setFolded(folded: boolean): Promise<void> {
+    await this.context.globalState.update('incontext.callerTree.folded', folded);
+    await vscode.commands.executeCommand('setContext', 'incontext.callerTree.folded', folded);
+    this.provider.setFolded(folded);
+    this.describe();
   }
 
   private async setExpanded(expanded: boolean): Promise<void> {
