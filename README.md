@@ -5,8 +5,8 @@
 <h1 align="center">InContext</h1>
 
 <p align="center">
-  <b>Find your way around code that agents write.</b><br>
-  Pinpoint references and notes on code, shared by you and your AI agents, that open anywhere with a click.
+  <b>Read, check and steer the code your AI agents write.</b><br>
+  A developer productivity kit for agentic development: pinpoint references, notes on code, the callers of any function, and every change since <code>main</code>, all a click from the lines they are about.
 </p>
 
 <p align="center">
@@ -22,25 +22,38 @@
   <a href="#notes-on-code">Notes</a> ·
   <a href="#ai-assistants">AI assistants</a> ·
   <a href="#caller-tree">Caller Tree</a> ·
+  <a href="#compare-with-a-branch">Branch Changes</a> ·
   <a href="#commands-shortcuts-and-settings">Reference</a>
 </p>
 
 ---
 
-InContext began as a way to put pinpoint code references into AI prompts. Now that agents write much of the code, it has grown into a way for you and your agents to understand that code and move around it together, speaking the same language: a reference such as `@incontext/src/extension.ts:L36:68`, which names exact lines and opens them in VS Code wherever it is clicked.
+Agents now write code faster than anyone can read it. The typing is no longer the slow part; the reading is. If you can't keep up with what your agents produce, you become the bottleneck, or you stop reading, and code ships that nobody has understood.
 
-- **You point the agent at the code.** Put references inline in a prompt, in the order you'd explain it, instead of leaving the agent to search.
-- **The agent points back.** Its replies cite code as references, so every claim about the code is one click from the lines it rests on, in VS Code, the terminal, or the Claude, ChatGPT/Codex and GitHub Copilot apps.
-- **Either of you maps the flow.** Notes on code link each step of a flow to the next, and back-links lead the other way, so code an agent wrote can be read, followed and checked step by step, by you or by the next agent.
-- **You see what a change touches.** The Caller Tree shows everything that reaches a function, up to its entry points.
+That is not an option everywhere. In finance, health, government and other regulated industries, someone has to know what the code actually does and stand behind it, whoever or whatever wrote it. You won't read every line an agent writes, but you must be able to **spot-check** any of it: pick a change, see exactly what it touches, follow it to where it is called, and leave a record of what you found.
+
+InContext began as a way to put pinpoint code references into AI prompts. It has grown into a reading and reviewing aid for agentic development, so the human in the loop stays in charge without becoming the bottleneck:
+
+- **See what changed.** Compare your branch with `main` (or any branch): every editor marks the changed lines in its gutter, and the **Branch Changes** view lists each changed file, the review a merge request will get, in the editor you already work in.
+- **See what a change touches.** The **Caller Tree** shows everything that reaches a function, up to its entry points: the routes, jobs and handlers a change can affect.
+- **Ask about exactly the code you mean, and check what the agent claims.** A reference such as `@incontext/src/extension.ts:L36:68` names exact lines and opens them wherever it is clicked. Put references in your prompts, and have the agent cite code the same way, so every claim is one click from the lines it rests on, in VS Code, the terminal, or the Claude, ChatGPT/Codex and GitHub Copilot apps.
+- **Keep what you worked out.** **Notes** on code link each step of a flow to the next, with back-links the other way, so code an agent wrote can be read, followed and checked step by step, by you, a reviewer, an auditor or the next agent.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="media/incontext-sidebar-dark.png">
+  <img src="media/incontext-sidebar-light.png" alt="The InContext sidebar beside an editor: Notes with a chain of notes, the Caller Tree of findOrder up to its entry points, and Branch Changes listing the files that differ from main, with the changed lines marked in the editor's gutter">
+</picture>
 
 | Feature | What it does |
 | --- | --- |
+| **[Branch Changes](#compare-with-a-branch)** | Pick a branch such as `main`: every editor marks what differs from it in the gutter, uncommitted edits included, and a view lists the changed files. Click a bar for the inline diff, or a file's diff icon for the side-by-side diff. |
+| **[Caller Tree](#caller-tree)** | Everything that reaches the function at the cursor, up to its entry points, each row labelled `File.function`. |
 | **[Code references](#code-references)** | Copy a reference to a selection, file or folder with <kbd>Cmd</kbd>+<kbd>'</kbd>, paste it into a prompt or a doc, hover it to preview the code. |
 | **[Open anywhere](#open-references-anywhere)** | References open with the lines selected from the Markdown preview and Mermaid diagrams, the terminal, AI replies, the Claude, ChatGPT/Codex and GitHub Copilot apps, Excalidraw drawings and Obsidian. |
 | **[Notes on code](#notes-on-code)** | Markdown notes on lines, written by you or your agent and kept outside your repositories. The places a note points to link back, so a flow reads as a chain. |
 | **[AI assistants](#ai-assistants)** | One command sets up Claude Code, GitHub Copilot and Codex to cite code as clickable references, and to write notes when you ask. |
-| **[Caller Tree](#caller-tree)** | Everything that reaches the function at the cursor, up to its entry points, each row labelled `File.function`. |
+
+All three views, **Notes**, **Caller Tree** and **Branch Changes**, sit together in the InContext sidebar, behind the InContext icon in the activity bar. Drag any of them elsewhere, such as into the Explorer, if you prefer.
 
 ## Quick start
 
@@ -48,11 +61,14 @@ InContext began as a way to put pinpoint code references into AI prompts. Now th
 2. Select some lines and press <kbd>Cmd</kbd>+<kbd>'</kbd>. A reference such as `@incontext/src/extension.ts:L36:68` is on your clipboard.
 3. Paste it into a prompt, a Markdown file or a code comment. In VS Code it is a link: click it to open the lines.
 4. Optionally, run **InContext: Set Up AI Assistant Instructions** from the Command Palette, so your AI tools reply with references you can click. See [AI assistants](#ai-assistants).
+5. To review what your branch, or your agent's, changes, run **InContext: Compare with Branch…** and pick `main`. The changed lines are marked in every editor, and the **Branch Changes** view lists the files. See [Compare with a branch](#compare-with-a-branch).
 
-## Why references and notes
+## Why InContext
 
-Agents write code faster than anyone can read it. What keeps you in charge is being able to say exactly which code you mean, check exactly which code the agent means, and keep what either of you worked out where the next person, or the next agent, will find it.
+What keeps you in charge of code an agent wrote is being able to say exactly which code you mean, check exactly which code the agent means, see exactly what changed, and keep what you worked out where the next person, or the next agent, will find it.
 
+- **Spot checks you can do in minutes.** Open **Branch Changes**, pick a file, read its changed lines in place, and use the **Caller Tree** to see which routes and jobs reach it. You don't have to read everything to know what a change does; you have to be able to check any part of it quickly.
+- **A record of what was checked.** A note on the lines you reviewed says what you verified and links to the code it depends on. It stays beside the code after the chat and the merge request are gone, for the next reviewer or an audit.
 - **Precise prompts.** A prompt reads best the way you'd explain the code to a colleague: *"look at this"*, followed by exactly the lines you mean. Inline references give the agent precise, ordered context where it is needed, instead of a pile of files to search through.
 - **Answers you can check.** When the agent cites code as references, you check each claim with a click rather than hunting for the code yourself.
 - **Understanding that lasts.** A chat ends; notes on code stay beside the lines they explain. An agent can map a flow with notes as it codes, and you, a teammate or the next agent can follow it later.
@@ -215,13 +231,13 @@ The lines a note points to show `← handler.ts:L7`, a click back to the note (i
 
 Back-links are worked out from your notes, never stored. If the lines a note points to have drifted, select the right ones and choose **Move to selection** in the box there: the note's reference is corrected.
 
-### The InContext view
+### The Notes view
 
-The InContext icon in the activity bar (drag it into the Explorer if you prefer) shows every note of the projects open in the window as chains. A chain starts at a note no other note points to; under each note are the places it points to, and a place with a note of its own opens into that note's links, step by step. A click opens a note at its lines, or a reference; <kbd>Cmd</kbd>+click (<kbd>Ctrl</kbd>+click on Windows and Linux) opens it to the side, and a double-click keeps its tab open.
+The **Notes** view, in the InContext sidebar, shows every note of the projects open in the window as chains. A chain starts at a note no other note points to; under each note are the places it points to, and a place with a note of its own opens into that note's links, step by step. A click opens a note at its lines, or a reference; <kbd>Cmd</kbd>+click (<kbd>Ctrl</kbd>+click on Windows and Linux) opens it to the side, and a double-click keeps its tab open.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="media/notes-view-dark.png">
-  <img src="media/notes-view-light.png" alt="The InContext view: the handler's note, the template's note it leads to, and the places they point to">
+  <img src="media/notes-view-light.png" alt="The Notes view: the handler's note, the template's note it leads to, and the places they point to">
 </picture>
 
 ### Let your AI assistant write them
@@ -311,7 +327,12 @@ The **Caller Tree** view, in the InContext sidebar with the Notes and Branch Cha
 
 ## Compare with a branch
 
-Before you raise a merge request, see what it will contain in the editors you work in, without a separate compare view. Run **InContext: Compare with Branch…** (or click the branch-compare icon in the status bar) and pick a branch such as `main` or `origin/develop`, or type any tag or commit.
+Before you raise a merge request, or when you review one an agent made, see what it contains in the editors you work in, without a separate compare view. Run **InContext: Compare with Branch…** (or click the branch-compare icon in the status bar, or the button in the **Branch Changes** view) and pick a branch such as `main` or `origin/develop`, or type any tag or commit.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="media/branch-changes-dark.png">
+  <img src="media/branch-changes-light.png" alt="Branch Changes lists the files that differ from main; the editor marks refunds.ts's added and changed lines in the gutter, and the inline diff shows the old refund signature against the new one">
+</picture>
 
 - **Gutter:** every editor marks the lines that differ from that branch, with VS Code's own change bars: green added, blue modified, a red triangle where lines were deleted. Uncommitted edits count too. Click a bar for the inline diff, where you can step to the next change or revert one; <kbd>Alt</kbd>+<kbd>F5</kbd> and <kbd>Shift</kbd>+<kbd>Alt</kbd>+<kbd>F5</kbd> step through changes. While comparing, git's own bars (changes since your last commit) are hidden, and they come back when you stop (`incontext.compare.hideGitGutter`).
 - **Branch Changes view:** in the InContext sidebar, every changed file as a tree, marked `A` added, `M` modified, `D` deleted, `R ← old name` renamed or `U` untracked. A click opens the file, which shows its changes in the gutter; <kbd>Cmd</kbd>+click (<kbd>Ctrl</kbd>+click on Windows and Linux) opens it to the side. The diff icon on a row opens the side-by-side diff, the branch on the left and your file, still editable, on the right. A deleted file opens its diff.

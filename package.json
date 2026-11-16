@@ -1,7 +1,7 @@
 {
   "name": "incontext",
   "displayName": "Code Reference Extension",
-  "description": "Find your way around code that agents write: pinpoint code references and notes on code, shared by you and your AI agents, that open anywhere with a click.",
+  "description": "Read, check and steer the code your AI agents write: pinpoint code references, notes on code, the callers of any function, and every change since main, a click from the lines they are about.",
   "publisher": "managea",
   "version": "2.0.0",
   "icon": "icon.png",
@@ -345,6 +345,11 @@
       {
         "view": "incontext.notes",
         "contents": "No notes yet. Put the cursor on a line, or select lines, and run [InContext: Add Note](command:incontext.addNote). Notes and the places they point to show here as chains."
+      },
+      {
+        "view": "incontext.callerTree",
+        "contents": "Put the cursor on a function to see what calls it, and what reaches those, up to its entry points: route handlers, module code and functions nothing else uses. Needs a language server for the file's language (TypeScript and JavaScript out of the box).",
+        "when": "!incontext.callerTree.started"
       },
       {
         "view": "incontext.changes",

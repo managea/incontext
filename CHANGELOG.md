@@ -3,7 +3,7 @@
 ## 2.0.0
 
 - Compare with a branch: pick a branch (**InContext: Compare with Branch…** or the status bar), and every editor's gutter marks what differs from it, uncommitted edits included, with the inline diff on a click. The **Branch Changes** view lists the changed files as a tree: a click opens the file, its diff icon the side-by-side diff. Compares from the merge-base, as a merge request does, or with the branch's tip; each repository of the window has its own branch
-- The Caller Tree moves from the Explorer into the InContext sidebar, with the Notes and Branch Changes views
+- The Caller Tree moves from the Explorer into the InContext sidebar, with the Notes and Branch Changes views. Until the cursor is on a function, it says what it shows
 - A new logo, shown beside each note's name, and in the gutter beside a note whose box is closed
 - Lines that only back-links point at show each back-link above them (`← handler.ts:L7`), a click back to its note, with the note on hover. Their box starts closed; open it to add a note there
 - Back-links read as the note's file and line, `← handler.ts:L7`, without "Note on"
@@ -14,7 +14,7 @@
 - A note's box is edged in the theme's quiet grey instead of its focus blue, and its header, the bar with its icons, is tinted to match: notes count as resolved comments, which VS Code draws more lightly
 - <kbd>Cmd</kbd>+click (<kbd>Ctrl</kbd>+click on Windows and Linux) opens a row of the Caller Tree or the InContext view to the side, instead of replacing the editor you are in; a double-click keeps its tab open. In the Caller Tree, <kbd>Cmd</kbd>+<kbd>Enter</kbd> and **Open to the Side** on a row's menu do the same, and no longer pin the tree: the row's pin icon is gone, and **Pin** stays in the title bar
 - The InContext view opens each note at its lines as the code is now, also after the code above it changed
-- The README is reorganised around what InContext does now: references, opening them anywhere, notes on code, AI assistants and the Caller Tree, with screenshots of a stock VS Code that follow your light or dark mode. The changelog moves here
+- The README is reframed around reading and spot-checking code that agents write, with screenshots of the InContext sidebar and Branch Changes. It was first reorganised around what InContext does now: references, opening them anywhere, notes on code, AI assistants and the Caller Tree, with screenshots of a stock VS Code that follow your light or dark mode. The changelog moves here
 
 ## 1.8.0
 

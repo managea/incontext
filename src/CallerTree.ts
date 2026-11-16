@@ -600,10 +600,17 @@ export class CallerTreeView implements vscode.Disposable {
     this.timer = setTimeout(() => { this.pending = this.update(); }, DELAY_MS);
   }
 
+  private started = false;
+
   async update(): Promise<void> {
     if (!this.view.visible) { return; }
     const target = await this.target();
     if (!target) { return; } // keep the last tree while a non-file editor is active
+    if (!this.started) {
+      // Hides the view's welcome text, which says to put the cursor on a function
+      this.started = true;
+      void vscode.commands.executeCommand('setContext', 'incontext.callerTree.started', true);
+    }
     this.view.description = this.pinned ? 'pinned' : this.kept() ? 'kept' : 'follows the cursor';
     const key = `${spot(target.uri, target.pos.line)}:${target.pos.character}`;
     if (this.live.key === key && !this.stale && (this.live.state || this.live.run)) {
