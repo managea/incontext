@@ -14,7 +14,7 @@ import { AiInstructionsResult } from '../AiInstructionsCommands';
 import { ObsidianPlugin } from '../ObsidianPlugin';
 import { ObsidianPluginResult } from '../ObsidianPluginCommands';
 import { Notes, NotesProvider } from '../Notes';
-import { NoteComment } from '../NotesComments';
+import { NoteComment, NotesComments } from '../NotesComments';
 import { NotesBacklinks } from '../NotesBacklinks';
 import { NoteNode, NotesTree } from '../NotesTree';
 import { launch, request } from './http';
@@ -636,6 +636,49 @@ suite('Extension', () => {
       assert.ok(removed.startsWith('# Notes on @alpha/src/a.ts\n'), 'other sections stay');
       const added = Notes.withNote(notesText, '## L10: const line10 = 10;', 'Called by @beta/b.ts:L4');
       assert.ok(added.endsWith('## L7\n\n## L10: const line10 = 10;\nCalled by @beta/b.ts:L4\n'), added);
+    });
+
+    test('boxes drawn twice at once leave one box per note, not one per draw', async () => {
+      const api = await vscode.extensions.getExtension('managea.incontext')!.activate() as { notesComments: NotesComments };
+      // Private parts, reached for this test: the boxes kept per file, the controller that makes them, and redraw
+      const comments = api.notesComments as unknown as {
+        threads: Map<string, vscode.CommentThread[]>;
+        controller: vscode.CommentController;
+        redraw(document: vscode.TextDocument): Promise<void>;
+      };
+      const document = await vscode.workspace.openTextDocument(aTs());
+      const key = document.uri.toString();
+      // Every box made from here on that is still there. VS Code's controller and boxes are frozen, so redraw is
+      // handed a stand-in controller whose boxes say when they are taken away
+      const shown = new Set<vscode.CommentThread>();
+      const controller = comments.controller;
+      comments.controller = {
+        createCommentThread: (uri: vscode.Uri, range: vscode.Range, list: vscode.Comment[]) => {
+          const thread = controller.createCommentThread(uri, range, list);
+          const box: vscode.CommentThread = new Proxy(thread, {
+            get: (target, property) => property === 'dispose'
+              ? () => { shown.delete(box); target.dispose(); }
+              : Reflect.get(target, property),
+            set: (target, property, value) => Reflect.set(target, property, value),
+          });
+          shown.add(box);
+          return box;
+        },
+      } as unknown as vscode.CommentController;
+      try {
+        // All three start before any has read the notes, as a save and the notes folder's watcher can
+        await Promise.all([comments.redraw(document), comments.redraw(document), comments.redraw(document)]);
+        const kept = comments.threads.get(key) ?? [];
+        const onFile = [...shown].filter(thread => thread.uri.toString() === key);
+        assert.ok(kept.length > 0, 'the notes are drawn');
+        assert.strictEqual(onFile.filter(thread => !kept.includes(thread)).length, 0, 'no box left on screen that is no longer kept');
+        const firstLines = kept.map(thread => (thread.comments[0] as NoteComment).lines.start.line);
+        assert.strictEqual(new Set(firstLines).size, firstLines.length, `one box per note: ${firstLines}`);
+      } finally {
+        comments.controller = controller;
+        // Drawn again by the real controller, so later tests see ordinary boxes
+        await comments.redraw(document);
+      }
     });
 
     test('a note typed into its box is saved to the notes file, and an edit rewrites only that note', async () => {

@@ -97,6 +97,11 @@ export class NotesComments implements vscode.Disposable, vscode.CodeLensProvider
   private readonly lensesChanged = new vscode.EventEmitter<void>();
   readonly onDidChangeCodeLenses = this.lensesChanged.event;
   private readonly pending = new Map<string, NodeJS.Timeout>();
+  /**
+   * How many times each file's boxes have been asked to be drawn, by the file's URI. A draw waits on the notes files
+   * and another can start meanwhile (a save, the notes folder changing, a file opening): only the latest draws.
+   */
+  private readonly draws = new Map<string, number>();
   /** The box being edited and when its edit began, and the new note's box Add Note opened, for Cmd+Enter and Esc. */
   private editing?: NoteComment;
   private editingSince = 0;
@@ -508,18 +513,29 @@ export class NotesComments implements vscode.Disposable, vscode.CodeLensProvider
    * Draws a file's boxes: one per note, with the back-links that point into its lines, and one per first line that
    * only back-links point at. Each starts open or closed as startsOpen says, unless you toggled it. Not while one of the
    * file's boxes is being edited.
+   *
+   * Two draws of one file can overlap while they read the notes files. Each would take away the boxes there were when
+   * it began and draw its own, so the first one's boxes would be left on screen with nothing to take them away: the
+   * same note shown twice. So only the latest draw goes on past the reading, and it takes away the boxes there are
+   * then, with nothing awaited between that and keeping its own.
    */
   private async redraw(document: vscode.TextDocument): Promise<void> {
     const key = document.uri.toString();
     if (!Notes.canHaveNotes(document.uri)) {
       return;
     }
+    const draw = (this.draws.get(key) ?? 0) + 1;
+    this.draws.set(key, draw);
+    const notes = await NotesProvider.notesIn(document);
+    const unclaimed = [...(await this.backlinks.backLinks()).get(document.uri.fsPath) ?? []];
+    // A later draw of this file shows what is newer; a file closed meanwhile has no boxes
+    if (this.draws.get(key) !== draw || document.isClosed) {
+      return;
+    }
     const old = this.threads.get(key) ?? [];
     if (old.some(thread => thread.comments.some(comment => comment.mode === vscode.CommentMode.Editing))) {
       return;
     }
-    const notes = await NotesProvider.notesIn(document);
-    const unclaimed = [...(await this.backlinks.backLinks()).get(document.uri.fsPath) ?? []];
     const boxes: { range: vscode.Range; note?: Note; backLinks: BackLink[] }[] = notes.map(({ note, range }) => {
       // Back-links that point into a note's lines show in that note's box
       const backLinks = unclaimed.filter(link => range.start.line <= link.targetLine && link.targetLine <= range.end.line);
