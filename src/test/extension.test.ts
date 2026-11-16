@@ -431,6 +431,28 @@ suite('Extension', () => {
       assert.deepStrictEqual(selectedLines(), [5, 5]);
     });
 
+    test('lines with a note of their own also show a link back to each note that points at them, above its line', async () => {
+      const bTs = vscode.Uri.file(path.join(folder('beta'), 'b.ts'));
+      const bNotes = path.join(notesFolder(), 'beta', 'b.ts.md');
+      fs.mkdirSync(path.dirname(bNotes), { recursive: true });
+      // a.ts's note points at L2:3, inside this note's lines, and at L10, which has no note
+      fs.writeFileSync(bNotes, '## L1-L3: const line1 = 1;\nThe first three lines\n');
+      try {
+        const api = await vscode.extensions.getExtension('managea.incontext')!.activate() as { notesComments: NotesComments };
+        const threads = (api.notesComments as unknown as { threads: Map<string, vscode.CommentThread[]> }).threads;
+        await vscode.window.showTextDocument(bTs);
+        await waitFor('the note\'s box, with the back-link it took', () => threads.get(bTs.toString())?.some(thread => {
+          const comment = thread.comments[0] as NoteComment;
+          return comment.note && comment.backLinks.some(link => link.targetLine === 1);
+        }));
+        const lenses = (await vscode.commands.executeCommand<vscode.CodeLens[]>('vscode.executeCodeLensProvider', bTs))
+          .filter(lens => lens.command?.command === NotesBacklinks.GO_TO_NOTE);
+        assert.deepStrictEqual(lenses.map(lens => [lens.range.start.line, lens.command!.title]).sort(), [[1, '← a.ts:L5'], [9, '← a.ts:L5']]);
+      } finally {
+        fs.rmSync(bNotes, { force: true });
+      }
+    });
+
     test('Move to selection in a back-link box points the notes\' references at the selected lines', async () => {
       const bTs = vscode.Uri.file(path.join(folder('beta'), 'b.ts'));
       const notesFile = path.join(notesFolder(), 'alpha', 'src', 'a.ts.md');

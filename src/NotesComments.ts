@@ -171,19 +171,23 @@ export class NotesComments implements vscode.Disposable, vscode.CodeLensProvider
   }
 
   /**
-   * Above lines whose box has no note of its own, which stays closed, a link back to each note that points at them
-   * (`← handler.ts:L30`), so you can go back without opening the box.
+   * Above each line a note elsewhere points at, a link back to that note (`← handler.ts:L30`), so you can go back
+   * without opening the box: also where the line has a note of its own, whose box shows the back-link only when open.
+   * Each sits above the line its reference starts on, kept within the box's lines.
    */
   provideCodeLenses(document: vscode.TextDocument): vscode.CodeLens[] {
     return (this.threads.get(document.uri.toString()) ?? [])
       .map(thread => thread.comments[0] as NoteComment)
-      .filter(comment => NotesComments.isEmpty(comment.note))
-      .flatMap(comment => comment.backLinks.map(link => new vscode.CodeLens(new vscode.Range(comment.lines.start, comment.lines.start), {
+      .flatMap(comment => comment.backLinks.map(link => {
+        const line = new vscode.Position(Math.min(Math.max(link.targetLine, comment.lines.start.line), comment.lines.end.line), 0);
+        return { link, at: new vscode.Range(line, line) };
+      }))
+      .map(({ link, at }) => new vscode.CodeLens(at, {
         title: `← ${link.source.path.split('/').pop()}:L${link.line}`,
         tooltip: link.text.split('\n').map(line => line.trim()).filter(Boolean).join(' · ') || 'Empty note',
         command: NotesBacklinks.GO_TO_NOTE,
         arguments: [link.source.toString(), link.line, link.lines, link.anchor],
-      })));
+      }));
   }
 
   /**

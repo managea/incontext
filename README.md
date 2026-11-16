@@ -222,7 +222,7 @@ Link places in your code base without changing it, such as a Lambda handler and 
 
 ### Back-links
 
-The lines a note points to show `← handler.ts:L7`, a click back to the note (in a split to the left, as links to the next step open to the right), with the note on hover. Where those lines have a note of their own, the back-link joins its box (`incontext.notes.showBackLinkNotes` quotes the note there too). Otherwise the back-link shows above the lines, and their box starts closed, marked by the InContext logo in the gutter: open it and choose **Add note**, so a note there can point on, and you can follow a flow as a chain:
+The lines a note points to show `← handler.ts:L7`, a click back to the note (in a split to the left, as links to the next step open to the right), with the note on hover. Where those lines have a note of their own, the back-link also joins its box (`incontext.notes.showBackLinkNotes` quotes the note there too). Otherwise their box holds only back-links and starts closed, marked by the InContext logo in the gutter: open it and choose **Add note**, so a note there can point on, and you can follow a flow as a chain:
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="media/notes-backlinks-dark.png">

@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Lines with a note of their own also show `← handler.ts:L7` above them for each note elsewhere that points at them, a click back to that note, as lines without a note do. Each sits above the line its reference starts on
+
 ## 2.1.1 (pre-release)
 
 - A note no longer shows two or three times at its lines. It could when its file's boxes were drawn again twice at once, such as just after saving a note
