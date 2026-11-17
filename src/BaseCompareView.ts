@@ -1,6 +1,6 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { BaseCompare, BaseContent } from './BaseCompare';
+import { BaseCompare, BaseContent, versus } from './BaseCompare';
 import { BaseCompareGutter, GitGutterSwap } from './BaseCompareGutter';
 import { BaseCompareDecorations, BaseCompareTree, FileNode, TreeNode } from './BaseCompareTree';
 
@@ -53,7 +53,10 @@ export class BaseCompareView {
       void vscode.commands.executeCommand('setContext', 'incontext.compare.active', compare.active);
       void vscode.commands.executeCommand('setContext', 'incontext.compare.tip', mode === 'tip');
       const refs = [...new Set(results.map(result => result.ref))];
-      view.description = refs.length ? `vs ${refs.join(', ')} · ${mode}` : undefined;
+      // `feature vs main · merge-base`; repositories on different branches each show theirs on their own row
+      const pairs = [...new Set(results.map(versus))];
+      view.description = !results.length ? undefined
+        : `${pairs.length === 1 ? pairs[0] : `${results.length} repositories`} · ${mode}`;
       const files = results.reduce((sum, result) => sum + result.changes.length, 0);
       const errors = results.filter(result => result.error);
       view.message = errors.length && results.length === 1 ? errors[0].error
@@ -112,7 +115,8 @@ export class BaseCompareView {
     if (ref) {
       const tip = compare.mode === 'tip';
       status.text = `$(git-compare) ${ref}${tip ? ' (tip)' : ''}${result?.error ? ' $(warning)' : ''}`;
-      status.tooltip = new vscode.MarkdownString(`Gutter and **Changes** view compare with \`${ref}\``
+      const head = result?.head ? `\`${result.head}\` ` : '';
+      status.tooltip = new vscode.MarkdownString(`Gutter and **Changes** view compare ${head}with \`${ref}\``
         + ` ${tip ? 'as it is now (tip)' : 'from where this branch left it (merge-base)'}`
         + `${result?.changes.length !== undefined ? `: ${result.changes.length} changed files` : ''}.`
         + `${result?.error ? `\n\n$(warning) ${result.error}` : ''}\n\nClick to change the branch.`, true);

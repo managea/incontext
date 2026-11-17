@@ -3,7 +3,7 @@
   "displayName": "Code Reference Extension",
   "description": "Read, check and steer the code your AI agents write: pinpoint code references, notes on code, the callers of any function, and every change since main, a click from the lines they are about.",
   "publisher": "managea",
-  "version": "2.1.2",
+  "version": "2.1.3",
   "icon": "icon.png",
   "license": "MIT",
   "repository": {
@@ -181,6 +181,11 @@
           "type": "boolean",
           "default": true,
           "markdownDescription": "While a repository is compared with a branch (**InContext: Compare with Branch**), hide git's own gutter markers, which compare with your last commit, so the gutter shows only the changes since that branch."
+        },
+        "incontext.compare.markChangedFiles": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "While a repository is compared with a branch (**InContext: Compare with Branch**), mark each file that differs from that branch with **★** in its editor tab, in the colour of its change, so you can tell a changed file the moment you open it, however far down its changes are. VS Code shows the mark in the Explorer too, beside git's own letter. Tabs show it while `#workbench.editor.decorations.badges#` is on."
         }
       }
     },

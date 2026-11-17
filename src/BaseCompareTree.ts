@@ -1,6 +1,6 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { BaseChange, BaseCompare, RepoCompare } from './BaseCompare';
+import { BaseChange, BaseCompare, RepoCompare, versus } from './BaseCompare';
 import { BaseCompareGutter } from './BaseCompareGutter';
 
 // The Changes view in the InContext sidebar: every file that differs from the compared branch, as a tree of
@@ -117,8 +117,9 @@ export class BaseCompareTree implements vscode.TreeDataProvider<TreeNode> {
       const item = new vscode.TreeItem(path.basename(result.root.fsPath), vscode.TreeItemCollapsibleState.Expanded);
       item.id = `repo:${result.root.fsPath}`;
       item.iconPath = new vscode.ThemeIcon(result.error ? 'warning' : 'repo');
-      item.description = result.error ?? `vs ${result.ref} · ${result.changes.length} file${result.changes.length === 1 ? '' : 's'}`;
-      item.tooltip = `${result.root.fsPath}\nCompared with ${result.ref} (${result.mode})${result.sha ? ` at ${result.sha.slice(0, 8)}` : ''}`;
+      const counted = `${versus(result)} · ${result.changes.length} file${result.changes.length === 1 ? '' : 's'}`;
+      item.description = result.error ? `${versus(result)} · ${result.error}` : counted;
+      item.tooltip = `${result.root.fsPath}\n${result.head ? `${result.head} compared` : 'Compared'} with ${result.ref} (${result.mode})${result.sha ? ` at ${result.sha.slice(0, 8)}` : ''}`;
       item.contextValue = 'repo';
       return item;
     }
@@ -154,17 +155,29 @@ export class BaseCompareTree implements vscode.TreeDataProvider<TreeNode> {
 /**
  * The Explorer's look for the Branch Changes rows: the status letter at the right edge and the name in git's colours
  * (added, modified, deleted, renamed, untracked), and a dot on the folders above a change. The rows' resourceUri is the
- * file's path under the `incontext-change` scheme, so these decorations show in this view only, never in the Explorer,
- * where git's own (changes since the last commit) stay; the path still gives each row its file icon.
+ * file's path under the `incontext-change` scheme, so these decorations show in this view only; the path still gives
+ * each row its file icon.
+ *
+ * The files themselves (the `file` scheme) get a ★ in the change's colour, so a changed file's editor tab says so at a
+ * glance, however far down its changes are. VS Code draws file decorations in the Explorer too, where the ★ sits beside
+ * git's own letter (changes since the last commit). `incontext.compare.markChangedFiles` turns it off.
  */
 export class BaseCompareDecorations implements vscode.FileDecorationProvider, vscode.Disposable {
   static readonly SCHEME = 'incontext-change';
   private readonly changed = new vscode.EventEmitter<vscode.Uri[] | undefined>();
   readonly onDidChangeFileDecorations = this.changed.event;
-  private readonly subscription: vscode.Disposable;
+  static readonly MARK_SETTING = 'incontext.compare.markChangedFiles';
+  static readonly MARK = '★';
+  private readonly subscriptions: vscode.Disposable[];
+  /** Each comparison's changes by path, built when first asked: the Explorer asks for every file it shows. */
+  private readonly byPath = new WeakMap<RepoCompare, Map<string, BaseChange>>();
 
   constructor(private readonly compare: BaseCompare) {
-    this.subscription = compare.onDidChange(() => this.changed.fire(undefined));
+    this.subscriptions = [
+      compare.onDidChange(() => this.changed.fire(undefined)),
+      vscode.workspace.onDidChangeConfiguration(event => event.affectsConfiguration(BaseCompareDecorations.MARK_SETTING)
+        && this.changed.fire(undefined)),
+    ];
   }
 
   static uri(file: vscode.Uri): vscode.Uri {
@@ -180,7 +193,8 @@ export class BaseCompareDecorations implements vscode.FileDecorationProvider, vs
   };
 
   provideFileDecoration(uri: vscode.Uri): vscode.FileDecoration | undefined {
-    if (uri.scheme !== BaseCompareDecorations.SCHEME) {
+    const view = uri.scheme === BaseCompareDecorations.SCHEME;
+    if (!view && (uri.scheme !== 'file' || !vscode.workspace.getConfiguration().get<boolean>(BaseCompareDecorations.MARK_SETTING, true))) {
       return undefined;
     }
     const file = uri.with({ scheme: 'file' });
@@ -190,19 +204,32 @@ export class BaseCompareDecorations implements vscode.FileDecorationProvider, vs
       return undefined;
     }
     const relative = path.relative(root.fsPath, file.fsPath).split(path.sep).join('/');
-    const change = result.changes.find(item => item.path === relative);
+    const change = this.changesOf(result).get(relative);
     if (!change) {
       return undefined;
     }
     const look = BaseCompareDecorations.LOOKS[change.untracked ? 'U' : change.status];
+    const tooltip = `${look.tooltip} since ${result.ref}`;
+    if (!view) {
+      return new vscode.FileDecoration(BaseCompareDecorations.MARK, tooltip, new vscode.ThemeColor(look.color));
+    }
     // Propagated, as git's are, so each folder above a change shows a dot in the change's colour
-    const decoration = new vscode.FileDecoration(look.badge, `${look.tooltip} since ${result.ref}`, new vscode.ThemeColor(look.color));
+    const decoration = new vscode.FileDecoration(look.badge, tooltip, new vscode.ThemeColor(look.color));
     decoration.propagate = true;
     return decoration;
   }
 
+  private changesOf(result: RepoCompare): Map<string, BaseChange> {
+    let changes = this.byPath.get(result);
+    if (!changes) {
+      changes = new Map(result.changes.map(change => [change.path, change]));
+      this.byPath.set(result, changes);
+    }
+    return changes;
+  }
+
   dispose(): void {
-    this.subscription.dispose();
+    this.subscriptions.forEach(subscription => subscription.dispose());
     this.changed.dispose();
   }
 }

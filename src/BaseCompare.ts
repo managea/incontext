@@ -22,6 +22,8 @@ export interface BaseChange {
 /** One repository's comparison, as last computed. */
 export interface RepoCompare {
   root: vscode.Uri;
+  /** The current branch, or the commit when HEAD is detached; unset when git can't tell. */
+  head?: string;
   ref: string;
   mode: CompareMode;
   /** The commit compared with; unset when the ref or the merge-base can't be found (see `error`). */
@@ -30,6 +32,11 @@ export interface RepoCompare {
   /** Files in the base commit, which the gutter compares even before they change. */
   tracked: Set<string>;
   error?: string;
+}
+
+/** `feature vs main`: the current branch and the branch it is compared with; `vs main` when the current one is unknown. */
+export function versus(result: Pick<RepoCompare, 'head' | 'ref'>): string {
+  return `${result.head ? `${result.head} ` : ''}vs ${result.ref}`;
 }
 
 /** The parts of the built-in git extension's API (extensions/git/src/api/git.d.ts) used here. */
@@ -75,6 +82,15 @@ export class Git {
       const names = new Set((await this.refs(root).catch(() => [])).map(ref => ref.name));
       return ['origin/main', 'origin/master', 'main', 'master'].find(name => names.has(name));
     }
+  }
+
+  /** The current branch's name, or the short commit when HEAD is detached. */
+  async head(root: vscode.Uri): Promise<string | undefined> {
+    const name = (await this.run(root, ['rev-parse', '--abbrev-ref', 'HEAD']).catch(() => '')).trim();
+    if (name && name !== 'HEAD') {
+      return name;
+    }
+    return (await this.run(root, ['rev-parse', '--short', 'HEAD']).catch(() => '')).trim() || undefined;
   }
 
   async resolve(root: vscode.Uri, ref: string, mode: CompareMode): Promise<string> {
@@ -255,13 +271,14 @@ export class BaseCompare implements vscode.Disposable {
     }
     const mode = this.mode;
     let result: RepoCompare;
+    const head = git.head(root);
     try {
       const sha = await git.resolve(root, ref, mode);
       const [changes, tracked] = await Promise.all([git.changes(root, sha), this.trackedAt(git, root, sha)]);
-      result = { root, ref, mode, sha, changes, tracked };
+      result = { root, head: await head, ref, mode, sha, changes, tracked };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      result = { root, ref, mode, changes: [], tracked: new Set(), error: mode === 'merge-base' && !message.includes('fatal')
+      result = { root, head: await head, ref, mode, changes: [], tracked: new Set(), error: mode === 'merge-base' && !message.includes('fatal')
         ? `${ref} has no common commit with HEAD` : message.split('\n')[0] };
     }
     // The base or the mode may have changed while git ran

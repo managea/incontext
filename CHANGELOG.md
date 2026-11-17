@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.1.3 (pre-release)
+
+- **Branch Changes** names the current branch as well as the one it is compared with: `feature vs main · merge-base`. With several repositories compared, each repository's row shows its own pair, such as `fix-login vs develop · 3 files`, and the title says how many repositories
+- A file that differs from the compared branch shows a **★** in its editor tab, in the colour of its change, so you see it is part of the branch's changes the moment you open it, even when they are far down the file. The Explorer shows it too, beside git's own letter. `incontext.compare.markChangedFiles` turns it off
+
 ## 2.1.2 (pre-release)
 
 - The Caller Tree colours each function's name and icon by its file, so rows in the same file share a colour and rows in other files stand out. Each row is now the function's name, then its file and line, dimmer (`renderArchiveGate  ReportDetails.tsx:212`), instead of `File.function`. `incontext.callerTree.colorByFile` turns the colours off

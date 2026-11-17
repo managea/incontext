@@ -56,6 +56,7 @@ suite('Compare with Branch', () => {
         await compare.setBase(shop, 'main');
         let result = await waitFor('the comparison', () => compare.of(shop));
         assert.strictEqual(result.error, undefined);
+        assert.strictEqual(result.head, 'feature', 'the current branch');
         assert.deepStrictEqual(summary(result), ['M a.ts', 'A fresh.ts (untracked)', 'D gone.ts', 'R old.ts -> new.ts', 'A src/added.ts']);
         assert.ok(compare.active);
         // VS Code's toggle that hides git's own gutter markers meanwhile
@@ -88,7 +89,18 @@ suite('Compare with Branch', () => {
           'R gitDecoration.renamedResourceForeground']);
         assert.strictEqual(look(tree.getChildren(top[0])[0]), 'A gitDecoration.addedResourceForeground');
         assert.strictEqual(tree.getTreeItem(top[1]).description, undefined, 'no letter beside the name');
-        assert.strictEqual(decorations.provideFileDecoration(vscode.Uri.joinPath(shop, 'a.ts')), undefined, 'nothing in the Explorer');
+        // The file itself, in its editor tab and the Explorer: a star in the change's colour, unless turned off
+        const star = decorations.provideFileDecoration(vscode.Uri.joinPath(shop, 'a.ts'));
+        assert.strictEqual(star && `${star.badge} ${(star.color as vscode.ThemeColor).id} ${star.propagate ?? false}`,
+          '★ gitDecoration.modifiedResourceForeground false');
+        assert.strictEqual(decorations.provideFileDecoration(vscode.Uri.joinPath(shop, 'unchanged.ts')), undefined);
+        const settings = vscode.workspace.getConfiguration('incontext.compare');
+        await settings.update('markChangedFiles', false, vscode.ConfigurationTarget.Global);
+        try {
+          assert.strictEqual(decorations.provideFileDecoration(vscode.Uri.joinPath(shop, 'a.ts')), undefined, 'no star when turned off');
+        } finally {
+          await settings.update('markChangedFiles', undefined, vscode.ConfigurationTarget.Global);
+        }
         decorations.dispose();
         // A click opens the file; a deleted file, which has none, its diff
         assert.strictEqual(renamed.command?.command, 'vscode.open');
