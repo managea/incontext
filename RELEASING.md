@@ -27,7 +27,7 @@ Releases use **even** minor versions (`2.0.x`, `2.2.0`) and [pre-releases](#publ
    git push origin main v1.2.0
    ```
 
-4. Watch the **Publish** run under the repo's **Actions** tab. It fails early if the tag doesn't match `package.json`.
+4. Watch the **Publish** run under the repo's **Actions** tab. It fails early if the tag doesn't match `package.json`, or if the tagged commit isn't on `main`: always release from `main`, after merging the branch into it.
 5. Check that the new version is live. The Marketplace scans each version first, which usually takes a few minutes:
 
    ```bash
@@ -44,7 +44,7 @@ Installed copies update on their own once the version is live. Only copies insta
 
 A pre-release is published to the Marketplace and Open VSX like a release, but only installs that chose **Switch to Pre-Release Version** on the extension (Extensions view → InContext) get it, and they then update to each new pre-release on their own. Everyone else stays on the latest release. Use it to try changes on another machine, such as a bigger code base at work, before releasing them.
 
-Run **`/pre-release`** in Claude Code (`.claude/skills/pre-release`), optionally with a version. It picks the next odd-minor version, tests, moves the changelog's **Unreleased** entries under it, commits, tags `vX.Y.Z-pre`, pushes and watches the publish. By hand:
+Run **`/pre-release`** in Claude Code (`.claude/skills/pre-release`), optionally with a version. Run from a worktree, it first merges the worktree's branch into `main` in the main checkout (stopping if either has uncommitted changes, or on a conflict), and does everything after that there, so what is tested and tagged is `main`. It picks the next odd-minor version, tests, moves the changelog's **Unreleased** entries under it, commits, tags `vX.Y.Z-pre`, pushes and watches the publish. By hand:
 
 ```bash
 npm version 2.1.0 --no-git-tag-version   # odd minor

@@ -160,7 +160,8 @@ export class BaseCompareTree implements vscode.TreeDataProvider<TreeNode> {
  *
  * The files themselves (the `file` scheme) get a ★ in the change's colour, so a changed file's editor tab says so at a
  * glance, however far down its changes are. VS Code draws file decorations in the Explorer too, where the ★ sits beside
- * git's own letter (changes since the last commit). `incontext.compare.markChangedFiles` turns it off.
+ * git's own letter (changes since the last commit). `incontext.compare.markChangedFiles` turns it off, and so does
+ * hiding the comparison from editors (the view's eye button).
  */
 export class BaseCompareDecorations implements vscode.FileDecorationProvider, vscode.Disposable {
   static readonly SCHEME = 'incontext-change';
@@ -194,7 +195,7 @@ export class BaseCompareDecorations implements vscode.FileDecorationProvider, vs
 
   provideFileDecoration(uri: vscode.Uri): vscode.FileDecoration | undefined {
     const view = uri.scheme === BaseCompareDecorations.SCHEME;
-    if (!view && (uri.scheme !== 'file' || !vscode.workspace.getConfiguration().get<boolean>(BaseCompareDecorations.MARK_SETTING, true))) {
+    if (!view && (uri.scheme !== 'file' || !this.compare.shown || !vscode.workspace.getConfiguration().get<boolean>(BaseCompareDecorations.MARK_SETTING, true))) {
       return undefined;
     }
     const file = uri.with({ scheme: 'file' });

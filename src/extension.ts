@@ -25,6 +25,7 @@ import { NotesProvider } from './Notes';
 import { NotesComments } from './NotesComments';
 import { NotesBacklinks } from './NotesBacklinks';
 import { NotesTree } from './NotesTree';
+import { CollectionsTree } from './Collections';
 import { CallerTreeView } from './CallerTree';
 import { BaseCompareView } from './BaseCompareView';
 import { Logger } from './Logger';
@@ -469,21 +470,19 @@ export function activate(context: vscode.ExtensionContext) {
   const compareWithBranch = BaseCompareView.register(context);
   context.subscriptions.push(...compareWithBranch.disposables);
 
-  // Notes on code, kept outside the code base (Notes): shown under their lines with their back-links (NotesComments)
+  // Markers on code, kept outside the code base (Notes): shown at their lines with their links both ways (NotesComments)
   const backlinks = new NotesBacklinks();
   const notesTree = new NotesTree(() => backlinks.notes());
-  const notesView = vscode.window.createTreeView(NotesTree.VIEW, { treeDataProvider: notesTree, showCollapseAll: true });
+  const notesView = vscode.window.createTreeView(NotesTree.VIEW, { treeDataProvider: notesTree, showCollapseAll: true, dragAndDropController: notesTree, canSelectMany: true });
   const notesComments = new NotesComments(backlinks, context.extensionUri);
+  // Markers in orders of your own, such as a flow's steps, each a Markdown file of links to them (Collections)
+  const collectionsTree = new CollectionsTree(() => backlinks.notes(), backlinks.onDidTouch);
+  notesComments.stepLenses = (source, name) => collectionsTree.stepLenses(source, name);
   context.subscriptions.push(
+    collectionsTree.onDidChangeWalk(() => notesComments.refreshLenses()),
     backlinks,
     notesComments,
-    // A note picked in the view opens with its box open; the row's click opens the file (NotesTree)
-    notesView.onDidChangeSelection(event => {
-      const node = event.selection[0];
-      if (node?.kind === 'note' && node.lines) {
-        notesComments.openBox(node.entry.source, node.lines.start.line);
-      }
-    }),
+    collectionsTree,
     notesTree,
     notesView,
     notesTree.watchCode(),
@@ -567,10 +566,11 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(vscode.window.registerTerminalLinkProvider(terminalLinks));
 
   // Picked up by the built-in Markdown preview through the markdown.markdownItPlugins contribution;
-  // callerTree, compareWithBranch, branchChangesView and notesComments are for the tests
+  // callerTree, compareWithBranch, branchChangesView, notesComments and collectionsTree are for the tests
   return {
     callerTree,
     notesComments,
+    collectionsTree,
     compareWithBranch: compareWithBranch.compare,
     branchChangesView: compareWithBranch.view,
     extendMarkdownIt(md: Parameters<typeof MarkdownPreview.extendMarkdownIt>[0]) {

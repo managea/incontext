@@ -4,6 +4,7 @@
 #   git tag v1.2.0 && git push origin main v1.2.0
 # A tag ending in -pre publishes a pre-release instead, which only installs that switched to pre-release get:
 #   git tag v2.1.0-pre && git push origin main v2.1.0-pre
+# Only a tag on main's history publishes: merge a branch into main first, then tag main.
 # Pre-releases use odd minor versions (2.1.x) and releases even ones (2.0.x, 2.2.x), as the Marketplace recommends,
 # so a pre-release never takes a version a release needs. See RELEASING.md.
 #
@@ -41,6 +42,16 @@ jobs:
     environment: marketplace
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # main's history, to check the tag is on it
+
+      - name: Check the tag is on main
+        if: github.ref_type == 'tag'
+        run: |
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::Tag $GITHUB_REF_NAME is on a commit that isn't on main. Merge the branch into main and tag main (git push origin main $GITHUB_REF_NAME)"
+            exit 1
+          fi
 
       - uses: actions/setup-node@v4
         with:

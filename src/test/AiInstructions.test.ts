@@ -59,8 +59,10 @@ suite('AiInstructions', () => {
     assert.ok(template().includes('{{NOTES_FOLDER}}'));
     const withFolder = AiInstructions.render(template(), 46266, 'vscode', '/Users/me/Notes');
     assert.ok(withFolder.includes('The notes folder is `/Users/me/Notes` (`incontext.notes.folder` in VS Code\'s user settings).'), withFolder);
-    assert.ok(withFolder.includes('`## L<line>: <that line\'s text, trimmed>`') && withFolder.includes('To map a flow, start at its entry point'));
-    assert.ok(withFolder.includes('Point forward only'), 'callers come from back-links, so a chain never loops back');
+    assert.ok(withFolder.includes('`<!-- L<line>: <that line\'s text, trimmed> -->`') && withFolder.includes('To map a flow, start at its entry point'));
+    assert.ok(withFolder.includes('put the flow\'s order in a collection') && withFolder.includes('don\'t write "Next" links into notes'), 'a flow\'s order is a collection\'s');
+    assert.ok(withFolder.includes('To name a reference or link for this note'), 'a label is the note\'s own name for it');
+    assert.ok(withFolder.includes('_collections/<name>.md') && withFolder.includes('names the step in that collection only'), 'collections of markers');
     const unset = AiInstructions.render(template(), 46266, 'vscode');
     assert.ok(!unset.includes('{{') && unset.includes('ask the user where to keep notes'));
   });

@@ -18,7 +18,8 @@ export class BaseCompareGutter implements vscode.Disposable {
   }
 
   private update(): void {
-    const wanted = new Map(this.compare.all().filter(result => result.sha).map(result => [result.root.fsPath, result]));
+    // Hidden from editors: no source controls, so no bars (BaseCompare.shown)
+    const wanted = new Map(this.compare.all().filter(result => result.sha && this.compare.shown).map(result => [result.root.fsPath, result]));
     for (const [key, entry] of this.controls) {
       const result = wanted.get(key);
       // A new base commit: a new source control, so open editors ask for their original again
@@ -130,7 +131,7 @@ export class GitGutterSwap implements vscode.Disposable {
   }
 
   private wanted(): boolean {
-    return this.compare.active && vscode.workspace.getConfiguration('incontext.compare').get<boolean>('hideGitGutter', true);
+    return this.compare.active && this.compare.shown && vscode.workspace.getConfiguration('incontext.compare').get<boolean>('hideGitGutter', true);
   }
 
   apply(want = this.wanted()): Promise<void> {

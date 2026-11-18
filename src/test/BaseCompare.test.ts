@@ -101,6 +101,17 @@ suite('Compare with Branch', () => {
         } finally {
           await settings.update('markChangedFiles', undefined, vscode.ConfigurationTarget.Global);
         }
+        // The eye hides the comparison from editors (no ★, no gutter bars) and keeps it, for the view and for showing again
+        await vscode.commands.executeCommand('incontext.compare.hideInEditors');
+        assert.ok(!compare.shown);
+        assert.strictEqual(decorations.provideFileDecoration(vscode.Uri.joinPath(shop, 'a.ts')), undefined, 'no star while hidden');
+        assert.strictEqual(look(top[1]), 'M gitDecoration.modifiedResourceForeground', 'the view keeps its letters');
+        assert.strictEqual(compare.of(shop), result, 'the comparison stays');
+        assert.strictEqual(api.branchChangesView.description, 'feature vs main · merge-base · hidden in editors');
+        await vscode.commands.executeCommand('incontext.compare.toggleInEditors');
+        assert.ok(compare.shown);
+        assert.strictEqual(decorations.provideFileDecoration(vscode.Uri.joinPath(shop, 'a.ts'))?.badge, '★');
+        assert.strictEqual(api.branchChangesView.description, 'feature vs main · merge-base');
         decorations.dispose();
         // A click opens the file; a deleted file, which has none, its diff
         assert.strictEqual(renamed.command?.command, 'vscode.open');
@@ -157,6 +168,7 @@ suite('Compare with Branch', () => {
         assert.deepStrictEqual(missing.changes, []);
         tree.dispose();
       } finally {
+        await compare.setShown(true);
         await compare.setMode('merge-base');
         await compare.setBase(shop, undefined);
         await compare.setBase(tools, undefined);

@@ -4,32 +4,48 @@ import { Notes, NotesProvider } from './Notes';
 import { NoteEntry, NotesBacklinks } from './NotesBacklinks';
 import { ReferenceParser } from './ReferenceParser';
 
-/** A note in the tree, with the notes above it on its branch, so a chain that loops back stops there. */
+/** A marker in the tree: under its file, or under a marker whose note links to it (`leaf`, which goes no further). */
 export interface NoteNode {
   kind: 'note';
   entry: NoteEntry;
-  branch: string[];
-  /** The note's lines in its file as the code is now, which the row opens; unknown when the file can't be read. */
+  /** The marker's lines in its file as the code is now, which the row opens; unknown when the file can't be read. */
   lines?: vscode.Range;
+  /** The name the note above it gives it (Notes.labelAt), shown instead of its own. */
+  label?: string;
+  /** Under another marker: a link to it, without its own links under it. */
+  leaf?: boolean;
 }
 
-/** A reference in a note that doesn't land on another note: where the chain ends, or loops back. */
+/** A link or reference in a marker's note that doesn't lead to another marker; a link to no marker (`missing`) is its name. */
 export interface ReferenceNode {
   kind: 'reference';
   reference: string;
-  loopsBack: boolean;
+  missing?: string;
+  /** The name the note it is in gives it (Notes.labelAt). */
+  label?: string;
 }
 
-export type NotesTreeNode = NoteNode | ReferenceNode;
+/** A file with markers, and its markers under it. */
+export interface FileNode {
+  kind: 'file';
+  source: vscode.Uri;
+  entries: NoteEntry[];
+}
+
+export type NotesTreeNode = FileNode | NoteNode | ReferenceNode;
 
 /**
- * The Notes view: every note of the projects open in this window, as chains. A chain starts at a note no other
- * note points to; under each note are its references, and a reference that lands on another note's lines shows
- * that note, with its own references under it, step by step. A click opens a note at its lines, or a reference;
- * Cmd+click (Ctrl+click on Windows and Linux) opens it to the side.
+ * The Markers view: every marker of the projects open in this window, the pool collections are made from. Each file
+ * with markers, its markers under it by line, and under each marker what its note links to, one level: the markers
+ * and places it is connected to. A flow's order is a collection's (Collections); Make Collection from Chain turns the
+ * links a flow was written with into one. A click opens a marker at its lines, or a place; Alt+click opens it to the
+ * side. Cmd+click (Ctrl+click on Windows and Linux) and Shift+click select several, to drag into a collection.
  */
-export class NotesTree implements vscode.TreeDataProvider<NotesTreeNode> {
+export class NotesTree implements vscode.TreeDataProvider<NotesTreeNode>, vscode.TreeDragAndDropController<NotesTreeNode> {
   static readonly VIEW = 'incontext.notes';
+  /** A marker dragged onto the Collections view: MarkerRef[] as JSON (CollectionsTree.MARKER_MIME). */
+  readonly dragMimeTypes = ['application/vnd.incontext.marker'];
+  readonly dropMimeTypes: string[] = [];
   private readonly changed = new vscode.EventEmitter<void>();
   readonly onDidChangeTreeData = this.changed.event;
 
@@ -60,21 +76,22 @@ export class NotesTree implements vscode.TreeDataProvider<NotesTreeNode> {
   async getChildren(node?: NotesTreeNode): Promise<NotesTreeNode[]> {
     const entries = await this.notes();
     if (!node) {
-      return NotesTree.withLines(NotesTree.chainStarts(entries).map(entry => ({ kind: 'note', entry, branch: [NotesTree.key(entry)] })));
+      const files = new Map<string, FileNode>();
+      for (const entry of entries) {
+        const file = files.get(entry.source.fsPath) ?? { kind: 'file', source: entry.source, entries: [] };
+        file.entries.push(entry);
+        files.set(entry.source.fsPath, file);
+      }
+      return [...files.values()].sort((a, b) => vscode.workspace.asRelativePath(a.source).localeCompare(vscode.workspace.asRelativePath(b.source)));
     }
-    if (node.kind === 'reference') {
+    if (node.kind === 'file') {
+      return NotesTree.withLines([...node.entries].sort((a, b) => a.note.line - b.note.line).map((entry): NoteNode => ({ kind: 'note', entry })));
+    }
+    if (node.kind === 'reference' || node.leaf) {
       return [];
     }
-    return NotesTree.withLines(node.entry.note.references.map((reference): NotesTreeNode => {
-      const next = NotesTree.noteAt(entries, reference, node.entry);
-      if (!next) {
-        return { kind: 'reference', reference, loopsBack: false };
-      }
-      const key = NotesTree.key(next);
-      return node.branch.includes(key)
-        ? { kind: 'reference', reference, loopsBack: true }
-        : { kind: 'note', entry: next, branch: [...node.branch, key] };
-    }));
+    return NotesTree.withLines(NotesTree.onward(entries, node.entry).map(({ reference, next, missing, label }): NotesTreeNode =>
+      next ? { kind: 'note', entry: next, label, leaf: true } : { kind: 'reference', reference, missing, label }));
   }
 
   /** The nodes, each note's with where its lines are now (Notes.rangeIn finds them by their first line's text). */
@@ -106,12 +123,39 @@ export class NotesTree implements vscode.TreeDataProvider<NotesTreeNode> {
     return { title: 'Open', command: 'vscode.open', arguments: selection ? [file, { selection }] : [file] };
   }
 
+  /** Markers dragged, or a file's, to add to a collection by dropping them on the Collections view. */
+  handleDrag(source: readonly NotesTreeNode[], dataTransfer: vscode.DataTransfer): void {
+    // A file carries its markers, by line; each marker once
+    const entries = source.flatMap(node => node.kind === 'note' ? [node.entry] : node.kind === 'file' ? [...node.entries].sort((a, b) => a.note.line - b.note.line) : []);
+    const markers = [...new Map(entries.map(entry => [`${entry.source.toString()}#${entry.note.name}`, { source: entry.source.toString(), name: entry.note.name }])).values()];
+    if (markers.length) {
+      dataTransfer.set(this.dragMimeTypes[0], new vscode.DataTransferItem(JSON.stringify(markers)));
+    }
+  }
+
   getTreeItem(node: NotesTreeNode): vscode.TreeItem {
-    if (node.kind === 'reference') {
-      const item = new vscode.TreeItem(NotesProvider.shortLabel(node.reference), vscode.TreeItemCollapsibleState.None);
-      item.description = node.loopsBack ? 'back to a note above' : node.reference.replace(/^@/, '');
+    if (node.kind === 'file') {
+      const item = new vscode.TreeItem(path.basename(node.source.fsPath), vscode.TreeItemCollapsibleState.Expanded);
+      item.id = node.source.toString();
+      item.resourceUri = node.source;
+      item.iconPath = vscode.ThemeIcon.File;
+      const where = path.dirname(vscode.workspace.asRelativePath(node.source));
+      item.description = `${where === '.' ? '' : `${where} · `}${node.entries.length} marker${node.entries.length === 1 ? '' : 's'}`;
+      item.contextValue = 'file';
+      return item;
+    }
+    if (node.kind === 'reference' && node.missing) {
+      const item = new vscode.TreeItem(node.label ?? node.missing, vscode.TreeItemCollapsibleState.None);
+      item.description = 'no marker by this name';
       item.tooltip = node.reference;
-      item.iconPath = new vscode.ThemeIcon(node.loopsBack ? 'sync' : 'arrow-small-right');
+      item.iconPath = new vscode.ThemeIcon('warning');
+      return item;
+    }
+    if (node.kind === 'reference') {
+      const item = new vscode.TreeItem(node.label ?? NotesProvider.shortLabel(node.reference), vscode.TreeItemCollapsibleState.None);
+      item.description = node.reference.replace(/^@/, '');
+      item.tooltip = node.reference;
+      item.iconPath = new vscode.ThemeIcon('arrow-small-right');
       const target = NotesBacklinks.targetOf(node.reference);
       const whole = ReferenceParser.parse(node.reference)?.startLine === undefined;
       item.command = target
@@ -121,44 +165,36 @@ export class NotesTree implements vscode.TreeDataProvider<NotesTreeNode> {
       return item;
     }
     const { source, note } = node.entry;
-    const item = new vscode.TreeItem(NotesTree.summary(note.text), note.references.length
-      ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.None);
-    item.description = `${path.basename(source.fsPath)}:L${note.line}`;
-    item.tooltip = new vscode.MarkdownString(note.text || '_Empty note_');
-    item.iconPath = new vscode.ThemeIcon('note');
+    const item = new vscode.TreeItem(node.label ?? note.name, !node.leaf && (note.references.length || note.links.length)
+      ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None);
+    // Named by the note above it, its own name too
+    item.description = `${node.label ? `${note.name} · ` : ''}${node.leaf ? `${path.basename(source.fsPath)}:` : ''}L${node.lines ? node.lines.start.line + 1 : note.line}`;
+    item.tooltip = new vscode.MarkdownString(`**${NotesProvider.escape(note.name)}**\n\n${note.text || '_No note_'}`);
+    item.iconPath = new vscode.ThemeIcon(node.leaf ? 'arrow-small-right' : note.text ? 'note' : 'bookmark');
+    item.contextValue = 'marker';
     item.command = node.lines
       ? NotesTree.open(source, node.lines)
       : { title: 'Go to Note', command: NotesBacklinks.GO_TO_NOTE, arguments: [source.toString(), note.line, note.lines, note.anchor, false] };
     return item;
   }
 
-  /** The notes no other note points to, in file and line order; a chain that loops back on itself starts anywhere. */
-  static chainStarts(entries: NoteEntry[]): NoteEntry[] {
-    const pointedAt = new Set<string>();
-    for (const entry of entries) {
-      for (const reference of entry.note.references) {
-        const next = NotesTree.noteAt(entries, reference, entry);
-        if (next) {
-          pointedAt.add(NotesTree.key(next));
-        }
-      }
-    }
-    const order = (a: NoteEntry, b: NoteEntry) => a.source.fsPath.localeCompare(b.source.fsPath) || a.note.line - b.note.line;
-    const starts = entries.filter(entry => !pointedAt.has(NotesTree.key(entry))).sort(order);
-    // Notes only reached through a loop would otherwise never show
-    const reached = new Set<string>();
-    const reach = (entry: NoteEntry) => {
-      const key = NotesTree.key(entry);
-      if (!reached.has(key)) {
-        reached.add(key);
-        entry.note.references.map(reference => NotesTree.noteAt(entries, reference, entry)).forEach(next => next && reach(next));
-      }
-    };
-    starts.forEach(reach);
-    return [...starts, ...entries.filter(entry => !reached.has(NotesTree.key(entry))).sort(order)];
+  /**
+   * Where a marker's note leads, in its order: each link to a marker (`missing` when there is none by that name) and
+   * each reference, with the marker its lines are in, if any.
+   */
+  static onward(entries: NoteEntry[], from: NoteEntry): { reference: string; next?: NoteEntry; missing?: string; label?: string }[] {
+    const text = from.note.text;
+    const links = from.note.links.map(link => {
+      const file = Notes.linkTarget(link, from.source);
+      const next = file && entries.find(entry => entry.source.fsPath === file.fsPath && entry.note.name === link.name);
+      return { at: text.indexOf(link.text), reference: link.text, next: next !== from ? next : undefined, missing: next ? undefined : link.name };
+    });
+    const references = from.note.references.map(reference => ({ at: text.indexOf(reference), reference, next: NotesTree.noteAt(entries, reference, from), missing: undefined }));
+    return [...links, ...references].sort((a, b) => a.at - b.at)
+      .map(({ at, reference, next, missing }) => ({ reference, next, missing, label: Notes.labelAt(text, at, at + reference.length) }));
   }
 
-  /** The note whose lines a reference lands on, other than the note it is written in. */
+  /** The marker whose lines a reference lands on, other than the marker it is written in. */
   static noteAt(entries: NoteEntry[], reference: string, from: NoteEntry): NoteEntry | undefined {
     const target = NotesBacklinks.targetOf(reference);
     return target && entries.find(entry => entry !== from
@@ -173,7 +209,4 @@ export class NotesTree implements vscode.TreeDataProvider<NotesTreeNode> {
     return plain.length > 80 ? `${plain.slice(0, 79)}…` : plain;
   }
 
-  private static key(entry: NoteEntry): string {
-    return `${entry.source.fsPath}#${entry.note.headingLine}`;
-  }
 }

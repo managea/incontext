@@ -3,7 +3,7 @@
   "displayName": "Code Reference Extension",
   "description": "Read, check and steer the code your AI agents write: pinpoint code references, notes on code, the callers of any function, and every change since main, a click from the lines they are about.",
   "publisher": "managea",
-  "version": "2.1.3",
+  "version": "2.1.4",
   "icon": "icon.png",
   "license": "MIT",
   "repository": {
@@ -156,15 +156,10 @@
           "default": "above",
           "markdownDescription": "Where a note's box shows: above its lines or under them."
         },
-        "incontext.notes.showBackLinkNotes": {
-          "type": "boolean",
-          "default": false,
-          "markdownDescription": "Quote the note in each back-link (`← handler.ts:L30`). Off, a back-link shows only its link, and the note on hover."
-        },
         "incontext.notes.startClosed": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "Start each note's box closed: its line shows the InContext logo in the gutter and the note on hover, and a click on the logo opens it. A note you have just written stays open. Off, a box with a note starts open."
+          "markdownDescription": "Start each marker's box closed: its line shows the InContext logo in the gutter and the note on hover, and a click on the logo opens it. A box you open, or a note you have just written, stays open until the file's last tab closes; opened again, the file's boxes are closed. Off, a box with a note starts open."
         },
         "incontext.notes.gutterAddButton": {
           "type": "boolean",
@@ -175,7 +170,7 @@
           "type": "string",
           "default": "",
           "scope": "machine-overridable",
-          "markdownDescription": "Folder for your notes on code (**InContext: Add Note**). In your user settings, keep it outside your repositories, so notes are never committed: each source file's notes are a Markdown file at `<folder>/<project>/<path in the project>.md`, and a synced folder shares them between machines. To keep a project's notes inside it and commit them, set a relative folder such as `.notes` in the project's own settings (`.vscode/settings.json`): its notes are then at `<project>/.notes/<path in the project>.md`. `~` is your home folder."
+          "markdownDescription": "Folder for your markers and notes on code (**InContext: Add Marker**). In your user settings, keep it outside your repositories, so notes are never committed: each source file's notes are a Markdown file at `<folder>/<project>/<path in the project>.md`, and a synced folder shares them between machines. To keep a project's notes inside it and commit them, set a relative folder such as `.notes` in the project's own settings (`.vscode/settings.json`): its notes are then at `<project>/.notes/<path in the project>.md`. `~` is your home folder."
         },
         "incontext.compare.hideGitGutter": {
           "type": "boolean",
@@ -214,12 +209,12 @@
       },
       {
         "command": "incontext.addNote",
-        "title": "Add Note",
+        "title": "Add Marker",
         "category": "InContext"
       },
       {
         "command": "incontext.notes.create",
-        "title": "Save Note"
+        "title": "Save Marker"
       },
       {
         "command": "incontext.notes.cancelDraft",
@@ -227,7 +222,7 @@
       },
       {
         "command": "incontext.notes.edit",
-        "title": "Edit Note",
+        "title": "Edit Marker's Note",
         "icon": "$(edit)"
       },
       {
@@ -240,7 +235,7 @@
       },
       {
         "command": "incontext.notes.delete",
-        "title": "Delete Note",
+        "title": "Delete Marker",
         "icon": "$(trash)"
       },
       {
@@ -254,8 +249,29 @@
       },
       {
         "command": "incontext.notes.refreshView",
-        "title": "Refresh Notes",
+        "title": "Refresh Markers",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "incontext.notes.toggleInFile",
+        "title": "Open or Close Markers in This File",
+        "category": "InContext"
+      },
+      {
+        "command": "incontext.notes.closeAll",
+        "title": "Close All Markers",
+        "category": "InContext",
+        "icon": "$(fold)"
+      },
+      {
+        "command": "incontext.notes.rename",
+        "title": "Rename Marker",
+        "category": "InContext"
+      },
+      {
+        "command": "incontext.notes.closeInEditor",
+        "title": "Close Markers in This File",
+        "category": "InContext"
       },
       {
         "command": "incontext.notes.submitFocused",
@@ -357,13 +373,30 @@
         "command": "incontext.compare.followEditor",
         "title": "Follow the Editor",
         "category": "InContext",
-        "icon": "$(eye-closed)"
+        "icon": "$(circle-large-outline)"
       },
       {
         "command": "incontext.compare.stopFollowingEditor",
         "title": "Stop Following the Editor",
         "category": "InContext",
+        "icon": "$(target)"
+      },
+      {
+        "command": "incontext.compare.hideInEditors",
+        "title": "Hide Branch Changes in Editors",
+        "category": "InContext",
         "icon": "$(eye)"
+      },
+      {
+        "command": "incontext.compare.showInEditors",
+        "title": "Show Branch Changes in Editors",
+        "category": "InContext",
+        "icon": "$(eye-closed)"
+      },
+      {
+        "command": "incontext.compare.toggleInEditors",
+        "title": "Toggle Branch Changes in Editors",
+        "category": "InContext"
       },
       {
         "command": "incontext.compare.refresh",
@@ -376,6 +409,97 @@
         "title": "Open Changes",
         "category": "InContext",
         "icon": "$(diff)"
+      },
+      {
+        "command": "incontext.collections.new",
+        "title": "New Collection",
+        "category": "InContext",
+        "icon": "$(add)"
+      },
+      {
+        "command": "incontext.collections.addMarker",
+        "title": "Add to Collection…",
+        "category": "InContext"
+      },
+      {
+        "command": "incontext.collections.addAt",
+        "title": "Add Marker to Collection…",
+        "category": "InContext"
+      },
+      {
+        "command": "incontext.collections.addMarkers",
+        "title": "Add Markers…",
+        "icon": "$(add)"
+      },
+      {
+        "command": "incontext.collections.remove",
+        "title": "Remove from Collection",
+        "icon": "$(close)"
+      },
+      {
+        "command": "incontext.collections.nameStep",
+        "title": "Name Step…",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "incontext.collections.moveUp",
+        "title": "Move Up",
+        "icon": "$(arrow-up)"
+      },
+      {
+        "command": "incontext.collections.moveDown",
+        "title": "Move Down",
+        "icon": "$(arrow-down)"
+      },
+      {
+        "command": "incontext.collections.moveIn",
+        "title": "Move In",
+        "icon": "$(indent)"
+      },
+      {
+        "command": "incontext.collections.moveOut",
+        "title": "Move Out",
+        "icon": "$(arrow-left)"
+      },
+      {
+        "command": "incontext.collections.rename",
+        "title": "Rename Collection…"
+      },
+      {
+        "command": "incontext.collections.delete",
+        "title": "Delete Collection…"
+      },
+      {
+        "command": "incontext.collections.openMarkdown",
+        "title": "Open as Markdown",
+        "icon": "$(go-to-file)"
+      },
+      {
+        "command": "incontext.collections.previous",
+        "title": "Previous Step",
+        "category": "InContext",
+        "icon": "$(arrow-up)"
+      },
+      {
+        "command": "incontext.collections.next",
+        "title": "Next Step",
+        "category": "InContext",
+        "icon": "$(arrow-down)"
+      },
+      {
+        "command": "incontext.collections.fromChain",
+        "title": "Make Collection from Chain…",
+        "category": "InContext"
+      },
+      {
+        "command": "incontext.collections.stop",
+        "title": "Stop Going Through Collection",
+        "category": "InContext",
+        "icon": "$(close)"
+      },
+      {
+        "command": "incontext.collections.reveal",
+        "title": "Show Step"
       }
     ],
     "keybindings": [
@@ -416,15 +540,26 @@
         "when": "editorTextFocus && !commentEditorFocused"
       },
       {
+        "command": "incontext.notes.toggleInFile",
+        "key": "ctrl+alt+shift+n",
+        "mac": "cmd+alt+shift+n",
+        "when": "editorTextFocus && !commentEditorFocused"
+      },
+      {
+        "command": "incontext.notes.closeInEditor",
+        "key": "escape",
+        "when": "editorTextFocus && incontext.notes.openInEditor && !commentEditorFocused && !editorHasSelection && !editorHasMultipleSelections && !selectionAnchorSet && !findWidgetVisible && !suggestWidgetVisible && !parameterHintsVisible && !inSnippetMode && !inlineSuggestionVisible && !inlineEditIsVisible && !markersNavigationVisible && !referenceSearchVisible && !dirtyDiffVisible && !editorHoverFocused && !inlineChatVisible && !notificationToastsVisible"
+      },
+      {
         "command": "incontext.notes.cancelFocused",
         "key": "escape",
-        "when": "commentEditorFocused && commentController == incontext.notes"
+        "when": "commentEditorFocused && commentThread == incontext.note"
       },
       {
         "command": "incontext.notes.submitFocused",
         "key": "ctrl+enter",
         "mac": "cmd+enter",
-        "when": "commentEditorFocused && commentController == incontext.notes"
+        "when": "commentEditorFocused && commentThread == incontext.note"
       },
       {
         "command": "incontext.callerTree.openToSide",
@@ -446,8 +581,13 @@
       "incontext": [
         {
           "id": "incontext.notes",
-          "name": "Notes",
+          "name": "Markers",
           "icon": "media/incontext-activity.svg"
+        },
+        {
+          "id": "incontext.collections",
+          "name": "Collections",
+          "icon": "$(list-ordered)"
         },
         {
           "id": "incontext.callerTree",
@@ -463,7 +603,7 @@
     "viewsWelcome": [
       {
         "view": "incontext.notes",
-        "contents": "No notes yet. Put the cursor on a line, or select lines, and run [InContext: Add Note](command:incontext.addNote). Notes and the places they point to show here as chains."
+        "contents": "No markers yet. Put the cursor on a line, or select lines, and run [InContext: Add Marker](command:incontext.addNote) (Cmd+Alt+N) to mark them with a name. Markers and the places they link to show here as chains."
       },
       {
         "view": "incontext.callerTree",
@@ -474,6 +614,10 @@
         "view": "incontext.changes",
         "contents": "See what your branch changes compared with another one, such as main, in the gutter of every editor and as a tree here: the files a merge request would show, uncommitted edits included.\n[Compare with Branch…](command:incontext.compare.chooseBase)",
         "when": "!incontext.compare.active"
+      },
+      {
+        "view": "incontext.collections",
+        "contents": "Put markers in an order of your own, such as the steps of a flow. A marker can be in any number of collections, and none of them changes it.\n[New Collection](command:incontext.collections.new)\nThen drag markers in from the Markers view, or choose Add to collection… in a marker's box."
       }
     ],
     "menus": {
@@ -545,13 +689,106 @@
         {
           "command": "incontext.compare.stopFollowingEditor",
           "when": "incontext.compare.followEditor"
+        },
+        {
+          "command": "incontext.compare.hideInEditors",
+          "when": "incontext.compare.active && incontext.compare.shown"
+        },
+        {
+          "command": "incontext.compare.showInEditors",
+          "when": "incontext.compare.active && !incontext.compare.shown"
+        },
+        {
+          "command": "incontext.compare.toggleInEditors",
+          "when": "incontext.compare.active"
+        },
+        {
+          "command": "incontext.collections.addMarker",
+          "when": "false"
+        },
+        {
+          "command": "incontext.collections.remove",
+          "when": "false"
+        },
+        {
+          "command": "incontext.collections.nameStep",
+          "when": "false"
+        },
+        {
+          "command": "incontext.collections.moveUp",
+          "when": "false"
+        },
+        {
+          "command": "incontext.collections.moveDown",
+          "when": "false"
+        },
+        {
+          "command": "incontext.collections.rename",
+          "when": "false"
+        },
+        {
+          "command": "incontext.collections.delete",
+          "when": "false"
+        },
+        {
+          "command": "incontext.collections.openMarkdown",
+          "when": "false"
+        },
+        {
+          "command": "incontext.collections.addMarkers",
+          "when": "false"
+        },
+        {
+          "command": "incontext.collections.moveIn",
+          "when": "false"
+        },
+        {
+          "command": "incontext.collections.moveOut",
+          "when": "false"
+        },
+        {
+          "command": "incontext.collections.fromChain",
+          "when": "false"
+        },
+        {
+          "command": "incontext.collections.reveal",
+          "when": "false"
+        },
+        {
+          "command": "incontext.collections.stop",
+          "when": "incontext.collections.walking"
         }
       ],
       "view/title": [
         {
+          "command": "incontext.notes.closeAll",
+          "group": "navigation",
+          "when": "view == incontext.notes"
+        },
+        {
           "command": "incontext.notes.refreshView",
           "group": "navigation",
           "when": "view == incontext.notes"
+        },
+        {
+          "command": "incontext.collections.previous",
+          "when": "view == incontext.collections && incontext.collections.walking",
+          "group": "navigation@1"
+        },
+        {
+          "command": "incontext.collections.next",
+          "when": "view == incontext.collections && incontext.collections.walking",
+          "group": "navigation@2"
+        },
+        {
+          "command": "incontext.collections.stop",
+          "when": "view == incontext.collections && incontext.collections.walking",
+          "group": "navigation@3"
+        },
+        {
+          "command": "incontext.collections.new",
+          "when": "view == incontext.collections",
+          "group": "navigation@4"
         },
         {
           "command": "incontext.callerTree.pin",
@@ -604,24 +841,34 @@
           "group": "navigation@2"
         },
         {
+          "command": "incontext.compare.hideInEditors",
+          "when": "view == incontext.changes && incontext.compare.active && incontext.compare.shown",
+          "group": "navigation@3"
+        },
+        {
+          "command": "incontext.compare.showInEditors",
+          "when": "view == incontext.changes && incontext.compare.active && !incontext.compare.shown",
+          "group": "navigation@3"
+        },
+        {
           "command": "incontext.compare.followEditor",
           "when": "view == incontext.changes && incontext.compare.active && !incontext.compare.followEditor",
-          "group": "navigation@3"
+          "group": "navigation@4"
         },
         {
           "command": "incontext.compare.stopFollowingEditor",
           "when": "view == incontext.changes && incontext.compare.active && incontext.compare.followEditor",
-          "group": "navigation@3"
+          "group": "navigation@4"
         },
         {
           "command": "incontext.compare.refresh",
           "when": "view == incontext.changes && incontext.compare.active",
-          "group": "navigation@4"
+          "group": "navigation@5"
         },
         {
           "command": "incontext.compare.stop",
           "when": "view == incontext.changes && incontext.compare.active",
-          "group": "navigation@5"
+          "group": "navigation@6"
         }
       ],
       "comments/commentThread/context": [
@@ -678,6 +925,10 @@
         {
           "command": "incontext.addNote",
           "group": "navigation"
+        },
+        {
+          "command": "incontext.notes.toggleInFile",
+          "group": "navigation"
         }
       ],
       "explorer/context": [
@@ -697,6 +948,86 @@
         }
       ],
       "view/item/context": [
+        {
+          "command": "incontext.collections.addMarker",
+          "when": "view == incontext.notes && viewItem == marker",
+          "group": "collections@1"
+        },
+        {
+          "command": "incontext.collections.fromChain",
+          "when": "view == incontext.notes && viewItem == marker",
+          "group": "collections@2"
+        },
+        {
+          "command": "incontext.collections.addMarkers",
+          "when": "view == incontext.collections && viewItem == collection",
+          "group": "inline"
+        },
+        {
+          "command": "incontext.collections.addMarkers",
+          "when": "view == incontext.collections && viewItem == collection",
+          "group": "1_open@0"
+        },
+        {
+          "command": "incontext.collections.openMarkdown",
+          "when": "view == incontext.collections && viewItem == collection",
+          "group": "inline"
+        },
+        {
+          "command": "incontext.collections.openMarkdown",
+          "when": "view == incontext.collections && viewItem == collection",
+          "group": "1_open@1"
+        },
+        {
+          "command": "incontext.collections.rename",
+          "when": "view == incontext.collections && viewItem == collection",
+          "group": "2_edit@1"
+        },
+        {
+          "command": "incontext.collections.delete",
+          "when": "view == incontext.collections && viewItem == collection",
+          "group": "2_edit@2"
+        },
+        {
+          "command": "incontext.collections.nameStep",
+          "when": "view == incontext.collections && viewItem == step",
+          "group": "inline@1"
+        },
+        {
+          "command": "incontext.collections.remove",
+          "when": "view == incontext.collections && viewItem == step",
+          "group": "inline@2"
+        },
+        {
+          "command": "incontext.collections.nameStep",
+          "when": "view == incontext.collections && viewItem == step",
+          "group": "1_step@1"
+        },
+        {
+          "command": "incontext.collections.moveUp",
+          "when": "view == incontext.collections && viewItem == step",
+          "group": "1_step@2"
+        },
+        {
+          "command": "incontext.collections.moveDown",
+          "when": "view == incontext.collections && viewItem == step",
+          "group": "1_step@3"
+        },
+        {
+          "command": "incontext.collections.moveIn",
+          "when": "view == incontext.collections && viewItem == step",
+          "group": "1_step@4"
+        },
+        {
+          "command": "incontext.collections.moveOut",
+          "when": "view == incontext.collections && viewItem == step",
+          "group": "1_step@5"
+        },
+        {
+          "command": "incontext.collections.remove",
+          "when": "view == incontext.collections && viewItem == step",
+          "group": "2_remove@1"
+        },
         {
           "command": "incontext.callerTree.openToSide",
           "when": "view == incontext.callerTree && viewItem == place",

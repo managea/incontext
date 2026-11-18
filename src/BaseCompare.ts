@@ -52,6 +52,7 @@ interface GitApi {
 }
 
 const MODE_KEY = 'incontext.compare.mode';
+const SHOWN_KEY = 'incontext.compare.shownInEditors';
 const BASES_KEY = 'incontext.compare.bases';
 const REFRESH_MS = 400;
 
@@ -204,6 +205,19 @@ export class BaseCompare implements vscode.Disposable {
   async setMode(mode: CompareMode): Promise<void> {
     await this.state.update(MODE_KEY, mode);
     this.refreshAll();
+  }
+
+  /**
+   * Whether editors show the comparison: the gutter's bars and the ★ on changed files' tabs. Hidden, the comparisons
+   * stay as they are, so the Branch Changes view still lists the files and showing them again is instant.
+   */
+  get shown(): boolean {
+    return this.state.get<boolean>(SHOWN_KEY, true);
+  }
+
+  async setShown(shown: boolean): Promise<void> {
+    await this.state.update(SHOWN_KEY, shown);
+    this.changed.fire();
   }
 
   /** Root URIs of the window's git repositories. */

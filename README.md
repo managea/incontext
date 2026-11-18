@@ -50,7 +50,7 @@ InContext began as a way to put pinpoint code references into AI prompts. It has
 | **[Caller Tree](#caller-tree)** | Everything that reaches the function at the cursor, up to its entry points, each function coloured by its file. |
 | **[Code references](#code-references)** | Copy a reference to a selection, file or folder with <kbd>Cmd</kbd>+<kbd>'</kbd>, paste it into a prompt or a doc, hover it to preview the code. |
 | **[Open anywhere](#open-references-anywhere)** | References open with the lines selected from the Markdown preview and Mermaid diagrams, the terminal, AI replies, the Claude, ChatGPT/Codex and GitHub Copilot apps, Excalidraw drawings and Obsidian. |
-| **[Notes on code](#notes-on-code)** | Markdown notes on lines, written by you or your agent and kept outside your repositories. The places a note points to link back, so a flow reads as a chain. |
+| **[Notes on code](#notes-on-code)** | Markdown notes on lines, written by you or your agent and kept outside your repositories, linked to the places they connect, and put in order in collections, so a flow reads step by step. |
 | **[AI assistants](#ai-assistants)** | One command sets up Claude Code, GitHub Copilot and Codex to cite code as clickable references, and to write notes when you ask. |
 
 All three views, **Notes**, **Caller Tree** and **Branch Changes**, sit together in the InContext sidebar, behind the InContext icon in the activity bar. Drag any of them elsewhere, such as into the Explorer, if you prefer.
@@ -209,48 +209,76 @@ The **InContext Links** plugin for Obsidian makes references in your notes, such
 
 ## Notes on code
 
-Link places in your code base without changing it, such as a Lambda handler and the templates that define and invoke it. A note shows beside its lines, rendered as Markdown, with each reference a click away:
+Mark places in your code base without changing it, such as a Lambda handler and the templates that define and invoke it, and link them. A **marker** is a named place: a line or some lines, with a short name and, if you like, a note in Markdown. Its name is what every link to it shows, so you can follow a flow by what each step does:
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="media/notes-note-dark.png">
   <img src="media/notes-note-light.png" alt="A note above a Lambda handler, with links to the template that defines it and the API that calls it">
 </picture>
 
-- **Add a note:** put the cursor on a line or select several, and press <kbd>Cmd</kbd>+<kbd>Alt</kbd>+<kbd>N</kbd> (**InContext: Add Note**, also in the editor's context menu). Type the note in Markdown, pasting references copied with <kbd>Cmd</kbd>+<kbd>'</kbd>, and press <kbd>Cmd</kbd>+<kbd>Enter</kbd>. The first time, choose a folder for your notes, outside your repositories so they are never committed. To add notes with a **+** beside each line instead, as for a review comment, turn on `incontext.notes.gutterAddButton`; VS Code then also draws a grey bar down the gutter.
-- **Read it:** references read as their file and lines, such as `handler.ts:L30`; hover for the whole reference, and click to open it beside the code. Hovering the line shows the note too, also when its box is closed. The box shows above its lines (`incontext.notes.position`: `below` puts it under them).
-- **Change it:** under each box, **Lines 11–25** selects the lines it covers, **Move to selection** moves it to the lines you have selected (to move a note, or have it cover other lines), and **Edit**, **Open as Markdown** and **Delete** do what they say. <kbd>Cmd</kbd>+<kbd>Alt</kbd>+<kbd>N</kbd> on the line edits it too; <kbd>Cmd</kbd>+<kbd>Enter</kbd> saves and <kbd>Esc</kbd> cancels.
+- **Add a marker:** put the cursor on a line or select several, and press <kbd>Cmd</kbd>+<kbd>Alt</kbd>+<kbd>N</kbd> (**InContext: Add Marker**, also in the editor's context menu). Give it a short name; Enter keeps the one offered, the line's text, and Esc makes no marker. Type `[[` in the name to link the new marker to one you pick by name: its name then starts with that marker's, `Validates the amount -> ` and the line's text, selected to type over. Paste a reference into the name and it goes into the new marker's note instead, leaving the name blank to type (Enter keeps the one shown). Without a note, that's a bookmark; the first time, choose a folder for your markers, outside your repositories so they are never committed. To add markers with a **+** beside each line instead, as for a review comment, turn on `incontext.notes.gutterAddButton`; VS Code then also draws a grey bar down the gutter.
+- **Write its note:** <kbd>Cmd</kbd>+<kbd>Alt</kbd>+<kbd>N</kbd> on its line, or **Edit** in its box. The first line is the marker's name: change it to rename the marker and every link to it (**InContext: Rename Marker** does that too). A first line that is blank, or has a reference or a link in it, isn't taken as a name. With the **+** beside a line, the first line you type names the new marker the same way. Type `[[` to link to another marker, picked by name, or to a new marker at the lines selected in another editor. A reference you paste (copied with <kbd>Cmd</kbd>+<kbd>'</kbd>) to lines a marker is on is saved as a link to that marker; a reference elsewhere stays a reference. To give a reference or link a name of your own, put it on a line of its own after a label, `Caller: @project/src/api.ts:L30`, or give a link its own text, `[[project/src/api.ts#Handles the call|Caller]]`: the hint above the marker and the Markers view show `Caller`. The name is only this note's: the place, or the marker linked to, keeps its own. <kbd>Cmd</kbd>+<kbd>Enter</kbd> saves and closes the box, <kbd>Esc</kbd> cancels.
+- **Follow its links:** above each marker's line, its name and then the links in its note, each a click of its own: `Validates the amount → | Persists the refund | handler.ts:L30 |`. The name opens or closes its box; each link goes to the marker it names, or the place it refers to. The first few links show, then `+3 more`. A link goes to the split that already shows that marker, else opens beside the code, to the right, as references do. Going to a marker leaves its box as it was. Hovering the line shows the note too.
+- **Open and close boxes:** every box starts closed, marked by the InContext logo in the gutter; click the logo to open it. A box you open stays open while the file has a tab; close the file's last tab and its boxes are closed when you open it again. <kbd>Esc</kbd> in the editor closes the file's open boxes, once it has nothing else to do there, such as clearing a selection or closing a suggestion. <kbd>Cmd</kbd>+<kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>N</kbd> (**InContext: Open or Close Markers in This File**, also in the editor's context menu) opens all of a file's boxes, or closes them all when any is open, and the fold button in the **Markers** view's title bar closes the boxes in every open file.
+- **Change it:** under each box, **Edit** (first, at the left) edits its name and note, **Lines 11–25** selects the lines it covers, **Link to…** adds a link to another marker (or to a new one at the selected lines), **Unlink…** takes links out, **Move to selection** moves it to the lines you have selected, and **Open as Markdown** and **Delete** do what they say. The box shows above its lines (`incontext.notes.position`: `below` puts it under them).
 
-### Back-links
+### Links back
 
-The lines a note points to show `← handler.ts:L7`, a click back to the note (in a split to the left, as links to the next step open to the right), with the note on hover. Where those lines have a note of their own, the back-link also joins its box (`incontext.notes.showBackLinkNotes` quotes the note there too). Otherwise their box holds only back-links and starts closed, marked by the InContext logo in the gutter: open it and choose **Add note**, so a note there can point on, and you can follow a flow as a chain:
+A link you make in VS Code (with `[[`, **Link to…** or a pasted reference) goes both ways: the marker you link to gets a link back at the end of its note, `[[project/path#Name]]` like any other. Each way is then a link of its own, shown only on the marker whose note has it, so a flow can be followed back as well as on. For a link that should go one way only, take the link back out of the other marker's note, with **Unlink…** or **Edit**; it isn't added again. Links written into the notes files by hand, or by an AI tool, are only what they say.
+
+Lines no marker is on, but a note refers to, show `+ | ← <name>` above them: `← <name>` is a click back to that marker, and `+` adds a marker there. A new marker takes the references to its lines: each becomes a link to it, and its note gets a link back to each, which it can name for itself (`Caller: [[...]]`) or take out; `+` opens its box in **Edit** for that. On a marker that notes still refer to with plain references (written by hand or by an AI tool), **Edit** offers the same links back at the end of its note, and saving makes those references links. Give the place a name and link on from it, and you can follow a flow as a chain:
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="media/notes-backlinks-dark.png">
   <img src="media/notes-backlinks-light.png" alt="The template shows the handler's note as a back-link, its own note pointing on to the orders table, and the table's back-link above its lines">
 </picture>
 
-Back-links are worked out from your notes, never stored. If the lines a note points to have drifted, select the right ones and choose **Move to selection** in the box there: the note's reference is corrected.
+A link to a marker follows it wherever it moves. If the lines a reference points to have drifted, select the right ones and choose **Move to selection** in the marker's box there: the references to exactly its lines are corrected.
 
-### The Notes view
+### The Markers view
 
-The **Notes** view, in the InContext sidebar, shows every note of the projects open in the window as chains. A chain starts at a note no other note points to; under each note are the places it points to, and a place with a note of its own opens into that note's links, step by step. A click opens a note at its lines, or a reference; <kbd>Cmd</kbd>+click (<kbd>Ctrl</kbd>+click on Windows and Linux) opens it to the side, and a double-click keeps its tab open.
+The **Markers** view, in the InContext sidebar, is the pool of markers collections are made from: each file with markers, its markers under it by line, and under each marker the markers and places its note links to. A click opens a marker at its lines, or a reference; <kbd>Alt</kbd>+click opens it to the side, and a double-click keeps its tab open. <kbd>Cmd</kbd>+click (<kbd>Ctrl</kbd>+click on Windows and Linux) and <kbd>Shift</kbd>+click select several markers, to drag them into a collection together or add them with **Add to Collection…** on their right-click menu.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="media/notes-view-dark.png">
   <img src="media/notes-view-light.png" alt="The Notes view: the handler's note, the template's note it leads to, and the places they point to">
 </picture>
 
+### Collections
+
+A collection puts markers in an order of your own, such as the steps of a flow, without changing them: a marker can be in any number of collections. The **Collections** view, under Markers, lists each one with its steps numbered by their place, `1. Validates the amount`. Make one with **+** in the view's title bar, then add markers to it: **Add Markers…**, the **+** on the collection's row, picks any number of them at once; or drag them from the Markers view (onto a step to put them there, onto the collection for the end), several selected together; or choose **Add to collection…** in a marker's box or **Add to Collection…** on the Markers view's right-click menu. Drag a step onto another to take its place, or onto another collection to add it there too; **Move Up**, **Move Down**, **Move In**, **Move Out** and **Remove from Collection** are on its right-click menu. **Move In** puts a step within the one before it, such as one of the ways a flow splits into: it shows under that step, numbered within it, `2.1 Paste`, and moves with it.
+
+While you drag out of the Markers view, VS Code scrolls it when the pointer passes near its top or bottom edge, as every list in VS Code does. To keep it still, use **Add Markers…** instead, or move the Collections view beside the Markers view, such as into the Secondary Side Bar, by dragging its title.
+
+A step shows its marker's name, or the name the collection gives it: **Name Step…** (the pencil on its row) names it in that collection only, such as `Step one`, and the marker keeps its own. A click opens a step's marker at its lines. **InContext: Next Step** and **Previous Step**, also in the view's title bar, go on from the step you last opened. While you go through a collection, each of its markers shows its place above its line, after its links: `‹ | Image upload 3/5 | ›`, the step before and after it, and the place itself, which shows the step in the Collections view. **Stop Going Through Collection**, the ✕ in the view's title bar, takes them away.
+
+**Markers or collections?** A marker's note says what is true of its code in any flow: what it does, and the markers and places it calls or reads. Which step comes next belongs to a flow, so it goes in a collection, where the same marker can be a step of several flows. Notes written as chains, `Next, the upload call: [[...]]`, become a collection with **Make Collection from Chain…** on a marker's right-click menu in the Markers view: the markers its note leads to, and theirs, in that order, named as the notes named the links (`The upload call`), with each way a flow splits into within the step it splits from. It then offers to take those links, and their links back, out of the notes; references, part of what a note says, stay.
+
+Each collection is a Markdown file of its own, at `<notes folder>/<project>/_collections/<name>.md`, which **Open as Markdown** opens, to write a note on a step that is the collection's only:
+
+```markdown
+# Checkout flow
+
+1. [[shop/src/api.ts#Validates the amount]]
+2. Persist: [[shop/src/db.ts#Persists the refund]]
+   Only on the retry path.
+    - Retry: [[shop/src/db.ts#Retries the write]]
+3. [[shop/src/Mailer.ts#Sends the receipt]]
+```
+
+Each step is a list item with a link to a marker. A label before the link names the step, as in a note, and the lines indented under it are its note, which shows when you point at the step; an item indented under it is a step within it. Renaming a marker renames the links to it in collections too; a step whose marker is gone says so.
+
 ### Let your AI assistant write them
 
-The [AI assistant instruction](#ai-assistants) tells Claude Code, GitHub Copilot and Codex how to write notes in your notes folder. Ask for them when you want them, for example *"Map the GetOrder flow with notes, from the handler to the table it reads"*, or *"add notes linking the places you change"* as it codes. The notes and their back-links then show the flow in VS Code, step by step.
+The [AI assistant instruction](#ai-assistants) tells Claude Code, GitHub Copilot and Codex how to write markers in your notes folder. Ask for them when you want them, for example *"Map the GetOrder flow with markers, from the handler to the table it reads"*, or *"mark and link the places you change"* as it codes. The markers and their links then show the flow in VS Code, step by step.
 
-### Where notes are kept
+### Where markers are kept
 
-- Each source file's notes are one Markdown file, at `<notes folder>/<project>/<path in the project>.md`, which you can also edit by hand: each `## L<line>: <the line's text>` heading (`## L11-L25: ...` for several lines) starts a note.
-- The notes folder is `incontext.notes.folder` in your user settings. Settings Sync doesn't copy it, so each machine has its own, and a synced folder shares notes between them.
-- To keep a project's notes in the project and commit them with it, set a relative folder in the project's own settings, such as `"incontext.notes.folder": ".notes"` in its `.vscode/settings.json`. Its notes are then at `<project>/.notes/<path in the project>.md`.
-- A note follows its lines when code above it changes, by its first line's text. If that text changes, the note stays on its line number; **Move to selection** puts it back.
-- Notes are for files inside your workspace folders. Back-links come from the notes of the projects open in the window, not from references elsewhere in your code.
+- Each source file's markers are one Markdown file, at `<notes folder>/<project>/<path in the project>.md` (collections are in `_collections` there), which you can also edit by hand: each marker is a `## <name>` heading with `<!-- L<line>: <the line's text> -->` under it (`<!-- L11-L25: ... -->` for several lines), then its note. A link to a marker is `[[<project>/<path>#<name>]]`, as Obsidian writes links to headings. Notes written before markers, headed `## L<line>: <the line's text>`, are markers named after their line, and get the new heading when you next change them.
+- The notes folder is `incontext.notes.folder` in your user settings. Settings Sync doesn't copy it, so each machine has its own, and a synced folder shares markers between them.
+- To keep a project's markers in the project and commit them with it, set a relative folder in the project's own settings, such as `"incontext.notes.folder": ".notes"` in its `.vscode/settings.json`. Its markers are then at `<project>/.notes/<path in the project>.md`.
+- A marker follows its lines when code above it changes, by its first line's text. If that text changes, the marker stays on its line number; **Move to selection** puts it back.
+- Markers are for files inside your workspace folders. Links back come from the markers of the projects open in the window, not from references elsewhere in your code.
 - The boxes are VS Code's comment boxes, so VS Code decides their look and where their buttons go.
 
 ## AI assistants
@@ -299,13 +327,14 @@ Run **InContext: Set Up AI Assistant Instructions** from the Command Palette. It
 
   ## Notes on code
 
-  The incontext extension shows notes on code in VS Code: Markdown notes on lines of a workspace file, kept outside the code, with references to the places they connect. Add notes only when the user asks for them, for a task or as you code, such as to map or explain a flow.
+  The incontext extension shows markers on code in VS Code: named places on lines of a workspace file, each with an optional Markdown note, kept outside the code, linked to the markers and places they connect. Add markers only when the user asks for them, for a task or as you code, such as to map or explain a flow.
 
   - The notes folder is `incontext.notes.folder` in VS Code's user settings; if it isn't set, ask the user where to keep notes. A project can set `incontext.notes.folder` in its own `.vscode/settings.json` to a relative folder, such as `.notes`, to keep its notes in that folder inside the project.
-  - The notes on a file are in `<notes folder>/<folder>/<path>.md` (or `<project>/<relative folder>/<path>.md` for a project's own folder), with <folder> and <path> as in references. If the file doesn't exist, create it with the first line `# Notes on @<folder>/<path>`.
-  - Each note is a section: a heading `## L<line>: <that line's text, trimmed>`, or `## L<start>-L<end>: <the first line's text, trimmed>` for several lines, then the note in Markdown. Copy the line's text exactly: incontext finds the note's lines by it when the code moves. Add your notes to a file's notes; don't change notes you didn't write.
-  - In a note, refer to the places it connects with plain references, such as @incontext/src/extension.ts:L36:68. Each place a note points to shows a back-link to the note in VS Code.
-  - To map a flow, start at its entry point and follow it: one note on each step's lines (a handler, the template that defines it, the API that calls it, the table it reads), saying what the step does, with a reference to the next step. Point forward only: refer to the next step and to what a step uses, never to the step before it or to its callers, because each step already shows a back-link to the note that leads to it. Where two paths meet, each path's step points to the shared one. The notes then chain the flow forward, and the back-links lead back.
+  - The markers on a file are in `<notes folder>/<folder>/<path>.md` (or `<project>/<relative folder>/<path>.md` for a project's own folder), with <folder> and <path> as in references. If the file doesn't exist, create it with the first line `# Notes on @<folder>/<path>`.
+  - Each marker is a section: a heading `## <name>`, a short name for the place that is unique in the file, without `[`, `]`, `#`, `|` or `^`; on the next line `<!-- L<line>: <that line's text, trimmed> -->`, or `<!-- L<start>-L<end>: <the first line's text, trimmed> -->` for several lines; then its note in Markdown, which may be empty. Copy the line's text exactly: incontext finds the marker's lines by it when the code moves. Add your markers to a file's markers; don't change markers you didn't write.
+  - In a note, link to another marker by its file and name, such as `[[incontext/src/extension.ts#Registers the commands]]` (`[[#Name]]` for one in the same file), and refer to places without a marker with plain references, such as @incontext/src/extension.ts:L36:68. A link shows only on the marker whose note has it, so it goes one way unless the other marker's note links back. To name a reference or link for this note, put it on a line of its own after a label, such as `Caller: @incontext/src/extension.ts:L36`, or give a link its own text, such as `[[incontext/src/extension.ts#Registers the commands|Setup]]`. VS Code then shows that name above the marker instead, and the place or marker keeps its own name.
+  - A collection puts markers in an order, such as a flow's steps: `<notes folder>/<folder>/_collections/<name>.md` (`<project>/<relative folder>/_collections/<name>.md` for a project's own folder), with the first line `# <name>`, then a numbered list with a link to one marker on each item. A label before a link, such as `2. Persist: [[...]]`, names the step in that collection only, and lines indented under an item are a note on that step. An item indented four spaces under a step is a step within it, such as one of the ways a flow splits into. A marker can be in several collections; adding it to one doesn't change it.
+  - To map a flow, start at its entry point and follow it: one marker on each step's lines (a handler, the template that defines it, the API that calls it, the table it reads), named for what the code there does, with a note on what it does and links to the markers it calls, renders or reads directly. Then put the flow's order in a collection named for the flow: one item per step, labelled with the step's part in this flow, and where the flow splits, the ways it splits into indented under that step. A marker's note says what is true of its code in any flow; which step comes next belongs in the collection, so don't write "Next" links into notes.
   ```
   <!-- ai-instructions:end -->
 
@@ -337,7 +366,8 @@ Before you raise a merge request, or when you review one an agent made, see what
 </picture>
 
 - **Gutter:** every editor marks the lines that differ from that branch, with VS Code's own change bars: green added, blue modified, a red triangle where lines were deleted. Uncommitted edits count too. Click a bar for the inline diff, where you can step to the next change or revert one; <kbd>Alt</kbd>+<kbd>F5</kbd> and <kbd>Shift</kbd>+<kbd>Alt</kbd>+<kbd>F5</kbd> step through changes. While comparing, git's own bars (changes since your last commit) are hidden, and they come back when you stop (`incontext.compare.hideGitGutter`).
-- **Branch Changes view:** in the InContext sidebar, every changed file as a tree, marked `A` added, `M` modified, `D` deleted, `R ← old name` renamed or `U` untracked. A click opens the file, which shows its changes in the gutter; <kbd>Cmd</kbd>+click (<kbd>Ctrl</kbd>+click on Windows and Linux) opens it to the side. The diff icon on a row opens the side-by-side diff, the branch on the left and your file, still editable, on the right. A deleted file opens its diff. Like the Explorer, the view follows the editor: the file you switch to is revealed and selected in the list when it has changes. The eye button in the view's title bar turns this off, and on again. The view's title names your branch and the one it is compared with (`feature vs main · merge-base`); with several repositories, each one's row names its own.
+- **Branch Changes view:** in the InContext sidebar, every changed file as a tree, marked `A` added, `M` modified, `D` deleted, `R ← old name` renamed or `U` untracked. A click opens the file, which shows its changes in the gutter; <kbd>Cmd</kbd>+click (<kbd>Ctrl</kbd>+click on Windows and Linux) opens it to the side. The diff icon on a row opens the side-by-side diff, the branch on the left and your file, still editable, on the right. A deleted file opens its diff. Like the Explorer, the view follows the editor: the file you switch to is revealed and selected in the list when it has changes. The target button in the view's title bar turns this off, and on again. The view's title names your branch and the one it is compared with (`feature vs main · merge-base`); with several repositories, each one's row names its own.
+- **Show or hide in editors:** the eye button in the view's title bar hides the comparison from your editors, the gutter bars and the **★** on tabs, and git's own gutter comes back. The comparison itself stays: the view still lists the changed files, and a second click shows it all again at once. **Stop Comparing** (the close button) ends the comparison.
 - **Tabs:** a file that differs from the branch shows a **★** in its editor tab, in the colour of its change, so you know it is part of the change as soon as you open it, wherever its changes are. The Explorer shows it too (`incontext.compare.markChangedFiles`).
 - **Merge-base or tip:** by default the comparison starts where your branch left the other one (the merge-base), as a merge request does, so changes others made on `main` since then don't show. The title bar button switches to the branch's tip, as it is now, and back.
 - **Several repositories:** each repository in the window has its own branch. With more than one, the command asks which, or **All repositories** to use the same branch in each. The view then has a row per repository.
@@ -350,10 +380,14 @@ Before you raise a merge request, or when you review one an agent made, see what
 | Copy Code Reference to Clipboard | <kbd>Cmd</kbd>+<kbd>'</kbd> in the editor |
 | Copy File Reference to Clipboard / Copy Directory Reference to Clipboard | <kbd>Cmd</kbd>+<kbd>'</kbd> in the Explorer |
 | Copy Reference as Link (for Drawings) | <kbd>Cmd</kbd>+<kbd>Alt</kbd>+<kbd>'</kbd> |
-| InContext: Add Note | <kbd>Cmd</kbd>+<kbd>Alt</kbd>+<kbd>N</kbd> |
+| InContext: Add Marker | <kbd>Cmd</kbd>+<kbd>Alt</kbd>+<kbd>N</kbd> |
+| InContext: Open or Close Markers in This File | <kbd>Cmd</kbd>+<kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>N</kbd> |
+| InContext: Close All Markers | |
+| InContext: New Collection / Add Marker to Collection… / Next Step / Previous Step | |
 | InContext: Set Up AI Assistant Instructions / Remove AI Assistant Instructions | |
 | InContext: Install Obsidian Plugin / Remove Obsidian Plugin | |
 | InContext: Compare with Branch… / Stop Comparing with Branch | |
+| InContext: Toggle Branch Changes in Editors | |
 
 | Setting | Default | What it does |
 | --- | --- | --- |
@@ -361,7 +395,6 @@ Before you raise a merge request, or when you review one an agent made, see what
 | `incontext.linkServer.port` | `46266` | The link server's port, shared by all VS Code windows |
 | `incontext.notes.folder` | | Where your notes are kept: an absolute folder in your user settings, or a folder relative to the project in its own settings |
 | `incontext.notes.position` | `above` | Where a note's box shows: `above` or `below` its lines |
-| `incontext.notes.showBackLinkNotes` | `false` | Quotes the note in each back-link, instead of showing it on hover only |
 | `incontext.notes.gutterAddButton` | `false` | Shows a **+** beside each line that adds a note, with VS Code's grey commenting bar down the gutter |
 | `incontext.compare.hideGitGutter` | `true` | Hides git's own gutter bars while comparing with a branch |
 | `incontext.compare.markChangedFiles` | `true` | Marks each file that differs from the compared branch with a **★** in its editor tab and the Explorer |

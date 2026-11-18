@@ -52,11 +52,12 @@ export class BaseCompareView {
       const mode = compare.mode;
       void vscode.commands.executeCommand('setContext', 'incontext.compare.active', compare.active);
       void vscode.commands.executeCommand('setContext', 'incontext.compare.tip', mode === 'tip');
+      void vscode.commands.executeCommand('setContext', 'incontext.compare.shown', compare.shown);
       const refs = [...new Set(results.map(result => result.ref))];
       // `feature vs main · merge-base`; repositories on different branches each show theirs on their own row
       const pairs = [...new Set(results.map(versus))];
       view.description = !results.length ? undefined
-        : `${pairs.length === 1 ? pairs[0] : `${results.length} repositories`} · ${mode}`;
+        : `${pairs.length === 1 ? pairs[0] : `${results.length} repositories`} · ${mode}${compare.shown ? '' : ' · hidden in editors'}`;
       const files = results.reduce((sum, result) => sum + result.changes.length, 0);
       const errors = results.filter(result => result.error);
       view.message = errors.length && results.length === 1 ? errors[0].error
@@ -81,6 +82,10 @@ export class BaseCompareView {
         reveal();
       }),
       view.onDidChangeVisibility(event => event.visible && reveal()),
+      // The eye: hides the comparison from editors (gutter bars, ★ on tabs) and shows it again, keeping the comparison
+      vscode.commands.registerCommand('incontext.compare.hideInEditors', () => compare.setShown(false)),
+      vscode.commands.registerCommand('incontext.compare.showInEditors', () => compare.setShown(true)),
+      vscode.commands.registerCommand('incontext.compare.toggleInEditors', () => compare.setShown(!compare.shown)),
       vscode.commands.registerCommand('incontext.compare.followEditor', () => follow(true)),
       vscode.commands.registerCommand('incontext.compare.stopFollowingEditor', () => follow(false)),
       vscode.commands.registerCommand('incontext.compare.chooseBase', (root?: vscode.Uri) => BaseCompareView.chooseBase(compare, root)),
@@ -114,11 +119,13 @@ export class BaseCompareView {
     const ref = root ? compare.baseOf(root) : result?.ref;
     if (ref) {
       const tip = compare.mode === 'tip';
-      status.text = `$(git-compare) ${ref}${tip ? ' (tip)' : ''}${result?.error ? ' $(warning)' : ''}`;
+      const hidden = !compare.shown;
+      status.text = `$(git-compare) ${ref}${tip ? ' (tip)' : ''}${hidden ? ' $(eye-closed)' : ''}${result?.error ? ' $(warning)' : ''}`;
       const head = result?.head ? `\`${result.head}\` ` : '';
       status.tooltip = new vscode.MarkdownString(`Gutter and **Changes** view compare ${head}with \`${ref}\``
         + ` ${tip ? 'as it is now (tip)' : 'from where this branch left it (merge-base)'}`
         + `${result?.changes.length !== undefined ? `: ${result.changes.length} changed files` : ''}.`
+        + `${hidden ? '\n\n$(eye-closed) Hidden in editors: the eye in **Branch Changes** shows it again.' : ''}`
         + `${result?.error ? `\n\n$(warning) ${result.error}` : ''}\n\nClick to change the branch.`, true);
     } else {
       status.text = '$(git-compare)';
